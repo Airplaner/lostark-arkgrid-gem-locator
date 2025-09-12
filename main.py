@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from enum import IntEnum, auto
+from functools import lru_cache
 
 VERBOSE = False
 
@@ -12,10 +14,18 @@ class Gem:
     boss: int  # 보스 피해
 
 
-@dataclass
-class Core:
-    energy: int  # 공급 의지력
-    coeff: list[int]  # 0P, 10P, 14P, 17P, 18P, 19P, 20P 증가 전투력 계수
+DP_STATE = tuple[
+    int,  # Core #1 남은 의지력
+    int,  # Core #2 남은 의지력
+    int,  # Core #3 남은 의지력
+    int,  # Core #1 질서/혼돈 포인트
+    int,  # Core #2 질서/혼돈 포인트
+    int,  # Core #3 질서/혼돈 포인트
+    int,  # 전체 공격력 Lv. 합계
+    int,  # 전체 추가 피해 Lv. 합계
+    int,  # 전체 보스 피해 Lv. 합계
+    int,  # 사용한 보석 bitmask (2^30)
+]
 
 
 with open("./data/attack.txt") as fp:
@@ -30,141 +40,210 @@ with open("./data/skill.txt") as fp:
     data_skill = list(map(int, fp.readlines()))
     assert len(data_skill) == 121
 
-
-def foo(
-    gems: list[Gem],
-    cores: list[Core],
-):
-    assert len(cores) <= 3
-    return dfs(
-        cores=cores,
-        gems=gems,
-        used=[-1] * 12,
-        used_flag=[False] * 12,
-        energy=[c.energy for c in cores],
-        idx=0,
-    )
-
-
 answer = 0
 
 
-def get_result(
-    cores: list[Core],
+class CoreGrade(IntEnum):
+    EPIC = auto()
+    LEGENDARY = auto()
+    RELIC = auto()
+    ANCIENT = auto()
+
+
+class CoreAttr(IntEnum):
+    ORDER = auto()
+    CHAOS = auto()
+
+
+class CoreType(IntEnum):
+    SUN = auto()
+    MOON = auto()
+    STAR = auto()
+
+
+@dataclass(frozen=True)
+class Core:
+    grade: CoreGrade
+    attr: CoreAttr
+    type_: CoreType
+
+
+core_info = {
+    CoreGrade.LEGENDARY: {
+        CoreAttr.ORDER: {
+            CoreType.SUN: [0, 150, 400, 750, 767, 783, 800],
+            CoreType.MOON: [0, 150, 400, 750, 767, 783, 800],
+            CoreType.STAR: [0, 150, 250, 450, 467, 483, 500],
+        }
+    },
+    CoreGrade.RELIC: {
+        CoreAttr.ORDER: {
+            CoreType.SUN: [0, 150, 400, 750, 767, 783, 800],
+            CoreType.MOON: [0, 150, 400, 750, 767, 783, 800],
+            CoreType.STAR: [0, 150, 250, 450, 467, 483, 500],
+        }
+    },
+    CoreGrade.ANCIENT: {
+        CoreAttr.ORDER: {
+            CoreType.SUN: [0, 150, 400, 850, 867, 883, 900],
+            CoreType.MOON: [0, 150, 400, 850, 867, 883, 900],
+            CoreType.STAR: [0, 150, 250, 550, 567, 583, 600],
+        }
+    },
+}
+core_energy = {
+    CoreGrade.EPIC: 7,
+    CoreGrade.LEGENDARY: 11,
+    CoreGrade.RELIC: 15,
+    CoreGrade.ANCIENT: 17,
+}
+
+
+def solve(
     gems: list[Gem],
-    used: list[int],
+    cores: list[Core],
 ):
-    global answer
-    global data_skill
-    global data_attack
-    global data_boss
+    N = len(gems)
+    assert N <= 30
 
-    lv_att = 0
-    lv_boss = 0
-    lv_skill = 0
+    # 현재 코어의 계수를 미리 가져옴
+    coeffs: list[list[int]] = list()
+    for core in cores:
+        coeffs.append(core_info[core.grade][core.attr][core.type_])
 
-    result = 1
-    cplist = []  # verbose
+    @lru_cache(maxsize=None)
+    def calc_value(
+        core_points: tuple[int, int, int],
+        lv1: int,
+        lv2: int,
+        lv3: int,
+    ):
+        result = 1.0
 
-    for core_idx, c in enumerate(cores):
-        core_point = 0  # 현재 코어의 질서/혼돈 포인트 총합
-
-        for gem_idx in range(4):
-            i = core_idx * 4 + gem_idx
-            if used[i] == -1:
-                continue
-            g = gems[used[i]]
-
-            core_point += g.point
-            lv_att += g.att
-            lv_boss += g.boss
-            lv_skill += g.skill
-
-        if VERBOSE:
-            cplist.append(core_point)
-        if core_point >= 20:
-            coeff = c.coeff[6]
-        elif core_point >= 19:
-            coeff = c.coeff[5]
-        elif core_point >= 18:
-            coeff = c.coeff[4]
-        elif core_point >= 17:
-            coeff = c.coeff[3]
-        elif core_point >= 14:
-            coeff = c.coeff[2]
-        elif core_point >= 10:
-            coeff = c.coeff[1]
-        else:
-            coeff = 0  # c.coeff[0]은 어짜피 0
-
-        result *= (coeff + 10000) / 10000
-
-    result *= (
-        (data_attack[lv_att] + 10000)
-        / 10000
-        * (data_boss[lv_boss] + 10000)
-        / 10000
-        * (data_skill[lv_skill] + 10000)
-        / 10000
-    )
-
-    if VERBOSE:
-        u = [" " if i == -1 else str(i) for i in used]
         for i in range(3):
-            print(f"[{' '.join(u[i * 4 : i * 4 + 4])}] {cplist[i]:2}P", end=" ")
-        print(f"공{lv_att:3} 추{lv_skill:3} 보{lv_boss:3}", end=" ")
-        print(f"{((result - 1) * 100):.7f}%")
-    if result > answer:
-        answer = result
+            core_point = core_points[i]
+            coeff = coeffs[i]
+            if core_point >= 20:
+                result *= (coeff[6] + 10000) / 10000
+            elif core_point >= 19:
+                result *= (coeff[5] + 10000) / 10000
+            elif core_point >= 18:
+                result *= (coeff[4] + 10000) / 10000
+            elif core_point >= 17:
+                result *= (coeff[3] + 10000) / 10000
+            elif core_point >= 14:
+                result *= (coeff[2] + 10000) / 10000
+            elif core_point >= 10:
+                result *= (coeff[1] + 10000) / 10000
 
-
-def dfs(
-    cores: list[Core],  # CONST 모든 코어들 (길이는 반드시 3)
-    gems: list[Gem],  # CONST 모든 젬들 (길이는 1 이상)
-    used: list[int],  # 사용한 젬의 idx (길이는 반드시 12)
-    used_flag: list[bool],  # gems에서 i번째 젬을 사용했다면, used_flag[i]는 True
-    energy: list[int],  # 코어마다 남은 에너지 (길이는 반드시 3)
-    idx: int,
-):
-    # 종료 상황
-    # 채울 코어가 없다면 가치 평가 및 종료
-    if idx >= 12:
-        return get_result(cores, gems, used)
-
-    core_idx = idx // 4
-
-    for gem_idx, gem in enumerate(gems):
-        # 이미 사용했거나, 현재 코어에서 공급 가능한 에너지가 부족한 경우 생략
-        if used_flag[gem_idx] or energy[core_idx] < gem.req:
-            continue
-
-        # 사용 처리 및 DFS
-        used[idx] = gem_idx
-        used_flag[gem_idx] = True
-        energy[core_idx] -= gem.req
-
-        dfs(
-            cores=cores,
-            gems=gems,
-            used=used,
-            used_flag=used_flag,
-            energy=energy,
-            idx=idx + 1,
+        result *= (
+            (10000 + data_attack[lv1])
+            / 10000
+            * (10000 + data_skill[lv2])
+            / 10000
+            * (10000 + data_boss[lv3])
+            / 10000
         )
+        return result
 
-        # 원복
-        used[idx] = -1
-        used_flag[gem_idx] = False
-        energy[core_idx] += gem.req
+    @lru_cache(maxsize=None)
+    def dfs(
+        e1: int,  # 남은 의지력
+        e2: int,
+        e3: int,
+        p1: int,  # 현재 질서/혼돈 포인트
+        p2: int,
+        p3: int,
+        lv1: int,  # 공격력
+        lv2: int,  # 추가 피해
+        lv3: int,  # 보스 피해
+        used_mask: int,  # use
+        s1: int,  # 사용한 슬롯
+        s2: int,
+        s3: int,
+    ) -> tuple[float, int]:  # 전투력, used_mask
+        if used_mask == ((1 << N) - 1) or (s1 == 4 and s2 == 4 and s3 == 4):
+            return calc_value((p1, p2, p3), lv1, lv2, lv3), used_mask
 
-    # 이번 코어에 젬을 더 이상 할당하는 걸 포기하고, 다음 코어로 이동
-    dfs(
-        cores=cores,
-        gems=gems,
-        used=used,
-        used_flag=used_flag,
-        energy=energy,
-        idx=idx - idx % 4 + 4,
+        # 현재 state에서 최적값
+        best = calc_value((p1, p2, p3), lv1, lv2, lv3), used_mask
+        for i in range(N):
+            if used_mask & (1 << i):
+                continue
+            g = gems[i]
+
+            if s1 < 4 and e1 >= g.req:
+                candidate = dfs(
+                    e1 - g.req,
+                    e2,
+                    e3,
+                    p1 + g.point,
+                    p2,
+                    p3,
+                    lv1 + g.att,
+                    lv2 + g.skill,
+                    lv3 + g.boss,
+                    used_mask | (1 << i),
+                    s1 + 1,
+                    s2,
+                    s3,
+                )
+                if candidate[0] > best[0]:
+                    best = candidate
+
+            if s2 < 4 and e2 >= g.req:
+                candidate = dfs(
+                    e1,
+                    e2 - g.req,
+                    e3,
+                    p1,
+                    p2 + g.point,
+                    p3,
+                    lv1 + g.att,
+                    lv2 + g.skill,
+                    lv3 + g.boss,
+                    used_mask | (1 << i),
+                    s1,
+                    s2 + 1,
+                    s3,
+                )
+                if candidate[0] > best[0]:
+                    best = candidate
+
+            if s3 < 4 and e3 >= g.req:
+                candidate = dfs(
+                    e1,
+                    e2,
+                    e3 - g.req,
+                    p1,
+                    p2,
+                    p3 + g.point,
+                    lv1 + g.att,
+                    lv2 + g.skill,
+                    lv3 + g.boss,
+                    used_mask | (1 << i),
+                    s1,
+                    s2,
+                    s3 + 1,
+                )
+                if candidate[0] > best[0]:
+                    best = candidate
+        return best
+
+    return dfs(
+        e1=core_energy[cores[0].grade],
+        e2=core_energy[cores[1].grade],
+        e3=core_energy[cores[2].grade],
+        p1=0,
+        p2=0,
+        p3=0,
+        lv1=0,  # 공격력
+        lv2=0,  # 추가 피해
+        lv3=0,  # 보스 피해
+        used_mask=0,
+        s1=0,
+        s2=0,
+        s3=0,
     )
 
 
@@ -186,7 +265,7 @@ def generate_gems(k: int = 10):
 
 
 if __name__ == "__main__":
-    v = foo(
+    v = solve(
         gems=[
             Gem(
                 req=8,
@@ -204,22 +283,52 @@ if __name__ == "__main__":
             ),
         ],
         cores=[
-            Core(energy=15, coeff=[0, 150, 400, 750, 767, 783, 800]),
-            Core(energy=15, coeff=[0, 150, 400, 850, 867, 883, 900]),
-            Core(energy=15, coeff=[0, 150, 400, 750, 767, 783, 800]),
+            Core(
+                CoreGrade.LEGENDARY,
+                CoreAttr.ORDER,
+                CoreType.SUN,
+            ),
+            Core(
+                CoreGrade.LEGENDARY,
+                CoreAttr.ORDER,
+                CoreType.MOON,
+            ),
+            Core(
+                CoreGrade.LEGENDARY,
+                CoreAttr.ORDER,
+                CoreType.STAR,
+            ),
         ],
     )
-    print(answer)
-    # exit(0)
-    answer = 0
+    print(v[0], bin(v[1]))
 
     # full test
-    v = foo(
-        gems=generate_gems(k=10),
+    import json
+
+    with open("gems.json", "r", encoding="utf-8") as fp:
+        raw_gems = json.load(fp)
+    gems = list()
+    for v in raw_gems:
+        gems.append(Gem(*v))
+
+    v = solve(
+        gems=gems,
         cores=[
-            Core(energy=15, coeff=[0, 150, 400, 750, 767, 783, 800]),
-            Core(energy=15, coeff=[0, 150, 400, 750, 767, 783, 800]),
-            Core(energy=15, coeff=[0, 150, 400, 750, 767, 783, 800]),
+            Core(
+                CoreGrade.LEGENDARY,
+                CoreAttr.ORDER,
+                CoreType.SUN,
+            ),
+            Core(
+                CoreGrade.LEGENDARY,
+                CoreAttr.ORDER,
+                CoreType.MOON,
+            ),
+            Core(
+                CoreGrade.RELIC,
+                CoreAttr.ORDER,
+                CoreType.STAR,
+            ),
         ],
     )
-    print(answer)
+    print(v[0], bin(v[1]))

@@ -65,6 +65,13 @@ class Core(BaseModel):
         (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 400, 400, 400, 750, 767, 783, 800)
         """
         combat_score_dict = {
+            CoreGrade.영웅: {  # 10P
+                CoreAttr.질서: {
+                    CoreType.해: [0] * 10 + [150] * 11,
+                    CoreType.달: [0] * 10 + [150] * 11,
+                    CoreType.별: [0] * 10 + [150] * 11,
+                }
+            },
             CoreGrade.전설: {  # 14P옵션까지만 있음
                 CoreAttr.질서: {
                     CoreType.해: [0] * 10 + [150] * 4 + [400] * 7,
@@ -128,6 +135,7 @@ class Core(BaseModel):
         # Q. 당장 젬이 없어서 유물 17P 달성 조차 안 돼요 -> 그정도면 손으로
         # Q. XXX 혼돈의 경우 14P 실압근이 17P 발사대를 쉽게 이길 수 있음. 14P로 낮춰야 함
         core_target_point = {
+            CoreGrade.영웅: 0,
             CoreGrade.전설: 14,
             CoreGrade.유물: 17,
             CoreGrade.고대: 17,
@@ -344,6 +352,10 @@ def get_possible_gem_index_combinations(
             if pj + 10 < point:
                 continue
 
+            # 영웅 코어를 위해 1-2개만 배치하는 경우...하지만 사용자의 주된 관심사가 아니다.
+            # if pj >= point and ej >= 0:
+            #     result.append([g[i][0], g[j][0]])
+
             # 3번째 슬롯에 사용할 젬 탐색
             for k in range(j + 1, n):
                 ek = ej - g[k][1]
@@ -490,8 +502,9 @@ def solve(
         print(core)
         print(f"공급 의지력 {core.energy} -> {core.target_point}P 달성")
         print(f"현재 가능한 조합: {len(possible_combination)}개")
-        print("상위 3개 조합")
-        for com in possible_combination[:3]:
+        top_k = 5
+        print(f"상위 {top_k}개 조합")
+        for com in possible_combination[:top_k]:
             print("-", end=" ")
             w, p = 0, 0
             for g in gems:
@@ -622,12 +635,12 @@ def profile_solve():
 
 
 if __name__ == "__main__":
-    lp = LineProfiler()
-    lp.add_function(solve)  # solve 내부를 추적
-    lp_wrapper = lp(profile_solve)
-    lp_wrapper()
-    lp.print_stats()
-    exit(0)
+    # lp = LineProfiler()
+    # lp.add_function(solve)  # solve 내부를 추적
+    # lp_wrapper = lp(profile_solve)
+    # lp_wrapper()
+    # lp.print_stats()
+    # exit(0)
 
     gem_count = TOTAL_GEM
     gems = generate_gems(k=gem_count)
@@ -635,7 +648,7 @@ if __name__ == "__main__":
 
     cores = [
         Core(
-            grade=CoreGrade.유물,
+            grade=CoreGrade.전설,
             attr=CoreAttr.질서,
             type_=CoreType.해,
         ),

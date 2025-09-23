@@ -1,11 +1,137 @@
+import time
 from dataclasses import dataclass
-from enum import IntEnum, auto
-from functools import lru_cache
-from typing import Annotated
+from enum import Enum, IntEnum, auto
+from functools import cached_property, lru_cache
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 VERBOSE = False
+MAX_GEM_OPTION_LEVEL = 120
+
+
+def pp(v: float) -> str:
+    """주어신 실수를 증감 %로 표시"""
+    return f"{v * 100 - 100:.3f}%"
+
+
+class GemOptionType(Enum):
+    공격력 = auto()  # 공격력 %
+    추가피해 = auto()  # 추가 피해 %
+    보스피해 = auto()  # 보스 피해 %
+
+
+class CoreGrade(IntEnum):
+    영웅 = auto()
+    전설 = auto()
+    유물 = auto()
+    고대 = auto()
+
+
+class CoreAttr(IntEnum):
+    질서 = auto()
+    혼돈 = auto()
+
+
+class CoreType(IntEnum):
+    해 = auto()
+    달 = auto()
+    별 = auto()
+
+
+class Core(BaseModel):
+    grade: CoreGrade
+    attr: CoreAttr
+    type_: CoreType
+
+    def __str__(self):
+        return f"[{self.grade.name} 등급 - {self.attr.name}의 {self.type_.name} 코어]"
+
+
+class Env:
+    def __init__(self):
+        # load from txt
+        data: dict[GemOptionType, list[int]] = dict()
+        # data[i]는 해당 옵션이 Lv. i일 때 전투력 증가량
+        with open("./data/attack.txt") as fp:
+            data[GemOptionType.공격력] = list(map(int, fp.readlines()))
+            assert len(data[GemOptionType.공격력]) == MAX_GEM_OPTION_LEVEL + 1
+
+        with open("./data/skill.txt") as fp:
+            data[GemOptionType.추가피해] = list(map(int, fp.readlines()))
+            assert len(data[GemOptionType.추가피해]) == MAX_GEM_OPTION_LEVEL + 1
+
+        with open("./data/boss.txt") as fp:
+            data[GemOptionType.보스피해] = list(map(int, fp.readlines()))
+            assert len(data[GemOptionType.보스피해]) == MAX_GEM_OPTION_LEVEL + 1
+
+        self.data = data
+
+        # init slope min max
+        # 같은 공격력 Lv.5 여도, Lv.0->5되는 것과 Lv.115->120되는 것의 전투력 증가 비율은 차이가 있다.
+        # 각 공 추 보에 대해서 lv.1-lv.20의 증감량의 최소 및 최대를 미리 구해놓음
+        # 20인 이유는 하나의 코어에서 달성할 수 있는 옵션 레벨은 최대 4개*5레벨 = 20레벨
+        self.slopes: dict[GemOptionType, dict[int, tuple[int, int]]] = {
+            k: dict() for k in GemOptionType
+        }
+        for k in data:
+            for lv in range(1, 21):
+                i = 0
+                _min, _max = None, None
+                while i + lv < MAX_GEM_OPTION_LEVEL:
+                    coeff = (data[k][i + lv] + 10000) / (data[k][i] + 10000)
+                    i += 1
+
+                    if _min is None or _min > coeff:
+                        _min = coeff
+                    if _max is None or _max < coeff:
+                        _max = coeff
+
+                self.slopes[k][lv] = _min, _max
+
+        # 코어 달성 포인트에 따른 전투력 증가량
+        # TODO 혼돈 코어의 경우 동일 등급이어도 다른 경우가 있음
+        self.core_combat_score = {
+            CoreGrade.전설: {  # 14P옵션까지만 있음
+                CoreAttr.질서: {
+                    CoreType.해: [0, 150, 400, 400, 400, 400, 400],
+                    CoreType.달: [0, 150, 400, 400, 400, 400, 400],
+                    CoreType.별: [0, 150, 250, 250, 250, 250, 250],
+                }
+            },
+            CoreGrade.유물: {
+                CoreAttr.질서: {
+                    CoreType.해: [0, 150, 400, 750, 767, 783, 800],
+                    CoreType.달: [0, 150, 400, 750, 767, 783, 800],
+                    CoreType.별: [0, 150, 250, 450, 467, 483, 500],
+                }
+            },
+            CoreGrade.고대: {
+                CoreAttr.질서: {
+                    CoreType.해: [0, 150, 400, 850, 867, 883, 900],
+                    CoreType.달: [0, 150, 400, 850, 867, 883, 900],
+                    CoreType.별: [0, 150, 250, 550, 567, 583, 600],
+                }
+            },
+        }
+
+        # 코어 공급 의지력
+        self.core_energy = {
+            CoreGrade.영웅: 9,  # 7 -> 9
+            CoreGrade.전설: 12,  # 11 -> 12
+            CoreGrade.유물: 15,
+            CoreGrade.고대: 17,
+        }
+
+        # 코어 목표 포인트
+        # 질서 17P의 경우 플레이 감성에 직접적으로 영향을 미치는 것이라 반드시 필요
+        # Q. 당장 젬이 없어서 유물 17P 달성 조차 안 돼요 -> 그정도면 손으로
+        # Q. XXX 혼돈의 경우 14P 실압근이 17P 발사대를 쉽게 이길 수 있음. 14P로 낮춰야 함
+        self.core_target_point = {
+            CoreGrade.전설: 14,
+            CoreGrade.유물: 17,
+            CoreGrade.고대: 17,
+        }
 
 
 gem_possible_req = {
@@ -20,12 +146,20 @@ gem_possible_req = {
 
 
 class Gem(BaseModel):
+    index: Annotated[
+        int,
+        Field(
+            default="식별자",  # 식별자의 고유함은 solve 함수에서 확인
+            ge=0,
+            le=99,
+        ),
+    ]
     req: Annotated[
         int,
         Field(
             title="필요 의지력",
-            ge=3,  # 안정 의지력 효율 Lv. 5
-            le=9,  # 불변 의지력 효율 Lv. 1
+            ge=3,  # 안정 의지력 효율 Lv. 5일 때 필요 의지력 8 - 5 = 3
+            le=9,  # 불변 의지력 효율 Lv. 1일 때 필요 의지력 10 - 1 = 9
         ),
     ]
     point: Annotated[
@@ -68,275 +202,390 @@ class Gem(BaseModel):
         poss_beta = True  # 견고, 왜곡
         poss_gamma = True  # 불변, 붕괴
 
-        # 공, 추피, 보피 중 최대 2개만 가질 수 있음
+        # 하나의 젬은 공, 추피, 보피 중 최대 2개만 가질 수 있음
         if self.att > 0 and self.skill > 0 and self.boss > 0:
             raise ValueError(
                 "젬은 공격력, 추가 피해, 보스 피해 중 최대 2가지만 가질 수 있습니다."
             )
 
-        if self.att:
-            poss_gamma = False  # not used yet
+        if self.att:  # 공격력이 있다면 불변이 절대 아님
+            poss_gamma = False
 
-        if self.skill:
+        if self.skill:  # 추가 피해가 있다면 견고가 절대 아님
             poss_beta = False
 
-        if self.boss:
+        if self.boss:  # 보스 피해가 있다면 안정이 절대 아님
             poss_alpha = False
+
+        # 주어진 가능성에 따라서 존재할 수 있는 필요 의지력 범위 계산
         ge, le = gem_possible_req[(poss_alpha, poss_beta, poss_gamma)]
         if not (ge <= self.req <= le):
             raise ValueError(
                 "예상되는 젬 세부 타입에서 나올 수 없는 필요 의지력입니다."
             )
+
         return self
 
-
-DP_STATE = tuple[
-    int,  # Core #1 남은 의지력
-    int,  # Core #2 남은 의지력
-    int,  # Core #3 남은 의지력
-    int,  # Core #1 질서/혼돈 포인트
-    int,  # Core #2 질서/혼돈 포인트
-    int,  # Core #3 질서/혼돈 포인트
-    int,  # 전체 공격력 Lv. 합계
-    int,  # 전체 추가 피해 Lv. 합계
-    int,  # 전체 보스 피해 Lv. 합계
-    int,  # 사용한 보석 bitmask (2^30)
-]
-
-
-with open("./data/attack.txt") as fp:
-    data_attack = list(map(int, fp.readlines()))  # data[i]는 i번째 공격력 증가량
-    assert len(data_attack) == 121
-
-with open("./data/boss.txt") as fp:
-    data_boss = list(map(int, fp.readlines()))
-    assert len(data_boss) == 121
-
-with open("./data/skill.txt") as fp:
-    data_skill = list(map(int, fp.readlines()))
-    assert len(data_skill) == 121
-
-answer = 0
+    def __str__(self):
+        """
+        젬을 아래와 같은 형태의 문자열로 반환합니다.
+        [ 4: 3W 5P 공2 추3]
+        index, 필요 의지력, 질서/혼돈 포인트, 공용 옵션
+        """
+        result = f"[{self.index:2}: {self.req}W {self.point}P"
+        if self.att:
+            result += f" 공{self.att}"
+        if self.skill:
+            result += f" 추{self.skill}"
+        if self.boss:
+            result += f" 보{self.boss}"
+        return result + "]"
 
 
-class CoreGrade(IntEnum):
-    EPIC = auto()
-    LEGENDARY = auto()
-    RELIC = auto()
-    ANCIENT = auto()
+def get_possible_gem_index_combinations(
+    gems: list[Gem],
+    energy: int,
+    point: int,
+) -> list[list[int]]:
+    """
+    gems에 대해서 공급 의지력 (energy)으로 목표 포인트 (point)를 달성할 수 있는
+    모든 젬 조합을 젬들의 index list가 담긴 list로 반환합니다.
+    """
+
+    n = len(gems)
+
+    # assertions
+    assert n < 100
+    assert energy in (12, 15, 17)
+    assert point in (14, 17)
+
+    result = []
+
+    # 속도를 높이기 위해 tuple로 변경 (index, 의지력, 포인트)
+    gem_tuples = [(g.index, g.req, g.point) for g in gems]
+    # 의지력 기준 오름차순 정렬
+    gem_tuples.sort(key=lambda x: x[1])
+    g = gem_tuples  # alias
+    # TODO 의지력 다음에는 포인트로 정렬해서 가망 없는 포인트 pruning을 조금 더 칼같이, 근데 지금 충분히 빠름
+
+    # 젬은 반드시 3개 혹은 4개를 장착함
+    # 1번째 슬롯에 사용할 젬 탐색
+    for i in range(n):
+        ei = energy - g[i][1]
+        pi = g[i][2]
+
+        # 첫 젬을 착용한 뒤 남은 의지력이 6 미만이면 필요한 최소 젬 개수 3개를 충족하지 못함
+        # 의지력 오름차순 정렬이니 이후 젬들은 요구 의지력이 같거나 높으므로 볼 필요 없음 break
+        if ei < 6:
+            break
+
+        # 남은 젬은 모두 5P여도 도달 불가능하면 다음 젬으로
+        # TODO 포인트 기준으로도 정렬해놨다면 다음 젬이 아닌,
+        # 현재 의지력보다 더 큰 의지력을 필요하는 젬으로 넘어가는 것이 더 빠름
+        # 그러기 위해서는 의지력이 변동되는 구간을 미리 찾아놓아야 함
+        if pi + 15 < point:
+            continue
+
+        # 2번째 슬롯에 사용할 젬 탐색
+        for j in range(i + 1, n):
+            ej = ei - g[j][1]
+            pj = pi + g[j][2]
+
+            # 남은 의지력이 3미만이면 최소 젬 개수 3개를 충족하지 못함
+            # 이후 젬들은 요구 의지력이 같거나 높으므로 break
+            if ej < 3:
+                break
+
+            # 남은 젬이 모두 5P여도 도달 불가능하면 다음 젬으로
+            if pj + 10 < point:
+                continue
+
+            # 3번째 슬롯에 사용할 젬 탐색
+            for k in range(j + 1, n):
+                ek = ej - g[k][1]
+                pk = pj + g[k][2]
+
+                # 현재 젬 i, j, k이 목표를 달성한다면 조합에 추가
+                # Q. 4번째 젬을 못 쓰는 순간에만 결과에 3개짜리를 추가해야하지 않나?
+                # A. No. 이 코어에서 3개만 쓰고 다른 코어에서 4개를 쓰는 게 좋을 수도 있다.
+                if pk >= point and ek >= 0:
+                    result.append([g[i][0], g[j][0], g[k][0]])
+
+                # 4번째 슬롯을 사용하려고 할 때, 남은 의지력이 3 미만이면 이후 젬들은 4번째 슬롯에 장착할 수 없음
+                if ek < 3:
+                    break
+
+                # 남은 젬이 5P여도 도달 불가능하면 다음 젬으로
+                if pk + 5 < point:
+                    continue
+
+                # 4번째 슬롯에 착용할 젬 탐색
+                for l in range(k + 1, n):
+                    el = ek - g[l][1]
+                    pl = pk + g[l][2]
+                    # 이번 젬을 사용할 수 없다면, 이후 젬들도 모두 사용할 수 없음
+                    if el < 0:
+                        break
+
+                    # 현재 젬 i, j, k, l이 목표를 달성한다면 조합에 추가
+                    if pl >= point and el >= 0:
+                        result.append([g[i][0], g[j][0], g[k][0], g[l][0]])
+
+    return result
 
 
-class CoreAttr(IntEnum):
-    ORDER = auto()
-    CHAOS = auto()
+def get_combat_power_range(
+    all_gems: list[Gem],
+    gem_index: list[int],
+    core: Core,
+    env: Env,
+):
+    """
+    주어진 코어에 젬을 장착했을 때 얻을 수 있는 전투력 범위를 반환
+    """
+    gems = [g for g in all_gems if g.index in gem_index]
+
+    att, skill, boss, point = 0, 0, 0, 0
+    for g in gems:
+        att += g.att
+        skill += g.skill
+        boss += g.boss
+        point += g.point
+
+    coeffs = env.core_combat_score[core.grade][core.attr][core.type_]
+
+    if point == 20:
+        i = 6
+    elif point == 19:
+        i = 5
+    elif point == 18:
+        i = 4
+    elif point == 17:
+        i = 3
+    elif point >= 14:
+        i = 2
+    elif point >= 10:
+        i = 1
+    else:
+        i = 0
+
+    core_power = (coeffs[i] + 10000) / 10000
+    min_power, max_power = core_power, core_power
+    if att:
+        min_power *= env.slopes[GemOptionType.공격력][att][0]
+        max_power *= env.slopes[GemOptionType.공격력][att][1]
+
+    if skill:
+        min_power *= env.slopes[GemOptionType.추가피해][skill][0]
+        max_power *= env.slopes[GemOptionType.추가피해][skill][1]
+
+    if boss:
+        min_power *= env.slopes[GemOptionType.보스피해][boss][0]
+        max_power *= env.slopes[GemOptionType.보스피해][boss][1]
+
+    return min_power, max_power
 
 
-class CoreType(IntEnum):
-    SUN = auto()
-    MOON = auto()
-    STAR = auto()
+def get_exact_combat_score(
+    cores: list[Core],
+    all_gems: list[Gem],
+    used_gem_mask_list: list[int],
+    env: Env,
+):
+    """
+    주어진 코어들과 젬 장착 상태에서 얻을 수 있는 정확한 전투력을 계산
+    """
+    assert len(cores) == len(used_gem_mask_list) == 3
+    result = 1
+    att, skill, boss = 0, 0, 0
+
+    # 각 코어에 대해서
+    for i in range(3):
+        core = cores[i]
+
+        point = 0
+        # 장착 중인 젬으로 부터 포인트, 공격력, 추피, 보피 레벨을 수집
+        gem_mask = used_gem_mask_list[i]
+        for g in all_gems:
+            if 1 << g.index & gem_mask:
+                att += g.att
+                skill += g.skill
+                boss += g.boss
+                point += g.point
+        # 포인트에 따라서 코어 옵션으로 얻는 전투력 반영
+        if point == 20:
+            i = 6
+        elif point == 19:
+            i = 5
+        elif point == 18:
+            i = 4
+        elif point == 17:
+            i = 3
+        elif point >= 14:
+            i = 2
+        elif point >= 10:
+            i = 1
+        else:
+            i = 0
+        coeffs = env.core_combat_score[core.grade][core.attr][core.type_]
+        result *= (coeffs[i] + 10000) / 10000
+
+    # 전체 공격력, 추피, 보피 레벨로 인한 전투력 반영
+    result *= (env.data[GemOptionType.공격력][att] + 10000) / 10000
+    result *= (env.data[GemOptionType.추가피해][skill] + 10000) / 10000
+    result *= (env.data[GemOptionType.보스피해][boss] + 10000) / 10000
+    return result
 
 
-@dataclass(frozen=True)
-class Core:
-    grade: CoreGrade
-    attr: CoreAttr
-    type_: CoreType
-
-
-core_info = {
-    CoreGrade.LEGENDARY: {
-        CoreAttr.ORDER: {
-            CoreType.SUN: [0, 150, 400, 750, 767, 783, 800],
-            CoreType.MOON: [0, 150, 400, 750, 767, 783, 800],
-            CoreType.STAR: [0, 150, 250, 450, 467, 483, 500],
-        }
-    },
-    CoreGrade.RELIC: {
-        CoreAttr.ORDER: {
-            CoreType.SUN: [0, 150, 400, 750, 767, 783, 800],
-            CoreType.MOON: [0, 150, 400, 750, 767, 783, 800],
-            CoreType.STAR: [0, 150, 250, 450, 467, 483, 500],
-        }
-    },
-    CoreGrade.ANCIENT: {
-        CoreAttr.ORDER: {
-            CoreType.SUN: [0, 150, 400, 850, 867, 883, 900],
-            CoreType.MOON: [0, 150, 400, 850, 867, 883, 900],
-            CoreType.STAR: [0, 150, 250, 550, 567, 583, 600],
-        }
-    },
-}
-core_energy = {
-    CoreGrade.EPIC: 7,
-    CoreGrade.LEGENDARY: 11,
-    CoreGrade.RELIC: 15,
-    CoreGrade.ANCIENT: 17,
-}
-core_slot_num = {
-    CoreGrade.EPIC: 2,
-    CoreGrade.LEGENDARY: 3,
-    CoreGrade.RELIC: 4,
-    CoreGrade.ANCIENT: 4,
-}
+@dataclass
+class GemSet:
+    used_bitmask: int  # 사용한 젬 index를 bitmask로 저장
+    combat_power_range: tuple[
+        float, float
+    ]  # 코어에 이 젬들이 사용됐을 때 증가하는 전투력의 범위
 
 
 def solve(
     gems: list[Gem],
     cores: list[Core],
 ):
-    N = len(gems)
-    assert N <= 30
+    # assertion
+    assert len(set([g.index for g in gems])) == len(gems)  # index 중복x
 
-    # 현재 코어의 계수를 미리 가져옴
-    coeffs: list[list[int]] = list()
-    for core in cores:
-        coeffs.append(core_info[core.grade][core.attr][core.type_])
+    # 환경 설정
+    env = Env()
 
-    @lru_cache(maxsize=None)
-    def calc_value(
-        core_points: tuple[int, int, int],
-        lv1: int,
-        lv2: int,
-        lv3: int,
-    ):
-        result = 1.0
+    # 코어 종류 분리
+    order_cores = [c for c in cores if c.attr == CoreAttr.질서]
+    chaos_cores = [c for c in cores if c.attr == CoreAttr.혼돈]
+    assert len(order_cores) == 3
+    # assert len(chaos_cores) == 3
 
-        for i in range(3):
-            core_point = core_points[i]
-            coeff = coeffs[i]
-            if core_point >= 20:
-                result *= (coeff[6] + 10000) / 10000
-            elif core_point >= 19:
-                result *= (coeff[5] + 10000) / 10000
-            elif core_point >= 18:
-                result *= (coeff[4] + 10000) / 10000
-            elif core_point >= 17:
-                result *= (coeff[3] + 10000) / 10000
-            elif core_point >= 14:
-                result *= (coeff[2] + 10000) / 10000
-            elif core_point >= 10:
-                result *= (coeff[1] + 10000) / 10000
+    gem_set_per_core: list[list[GemSet]] = list()
+    # 모든 질서 젬에 대해서
+    for core in order_cores:
+        possible_combination: list[GemSet] = list()
 
-        result *= (
-            (10000 + data_attack[lv1])
-            / 10000
-            * (10000 + data_skill[lv2])
-            / 10000
-            * (10000 + data_boss[lv3])
-            / 10000
+        # 현재 코어에서 목표를 달성할 수 있는 모든 젬 조합을 반환
+        possible_gem_index_combinations = get_possible_gem_index_combinations(
+            gems,
+            env.core_energy[core.grade],
+            env.core_target_point[core.grade],
         )
-        # print(core_points, lv1, lv2, lv3)
-        return result
 
-    @lru_cache(maxsize=None)
-    def dfs(
-        e1: int,  # 남은 의지력
-        e2: int,
-        e3: int,
-        p1: int,  # 현재 질서/혼돈 포인트
-        p2: int,
-        p3: int,
-        lv1: int,  # 공격력
-        lv2: int,  # 추가 피해
-        lv3: int,  # 보스 피해
-        used_mask: int,  # use
-        s1: int,  # 남은 슬롯
-        s2: int,
-        s3: int,
-    ) -> tuple[float, int]:  # 전투력, used_mask
-        if used_mask == ((1 << N) - 1) or (s1 == 0 and s2 == 0 and s3 == 0):
-            return calc_value((p1, p2, p3), lv1, lv2, lv3), used_mask
+        # 모든 젬 조합에 대해서 GemSet 객체로 변환
+        # - bitmask 계산
+        # - 전투력 증가 범위 계산
+        for gem_index_list in possible_gem_index_combinations:
+            bitmask = 0
+            for i in gem_index_list:
+                bitmask |= 1 << i
 
-        # 현재 state에서 최적값
-        best = calc_value((p1, p2, p3), lv1, lv2, lv3), used_mask
-        for i in range(N):
-            if used_mask & (1 << i):
+            possible_combination.append(
+                GemSet(
+                    used_bitmask=bitmask,
+                    combat_power_range=get_combat_power_range(
+                        gems,
+                        gem_index_list,
+                        core,
+                        env,
+                    ),
+                )
+            )
+        # GemSet을 전투력 증가 범위 최대값에 대해 내림차순으로 정렬 (for prunning)
+        possible_combination.sort(key=lambda x: x.combat_power_range[1], reverse=True)
+        gem_set_per_core.append(possible_combination)
+
+        # DEBUGGING
+        print("-" * 20)
+        print(core)
+        print(
+            f"공급 의지력 {env.core_energy[core.grade]} -> {env.core_target_point[core.grade]}P 달성"
+        )
+        print(f"현재 가능한 조합: {len(possible_combination)}개")
+        print("상위 3개 조합")
+        for com in possible_combination[:3]:
+            print("-", end=" ")
+            w, p = 0, 0
+            for g in gems:
+                if 1 << g.index & com.used_bitmask:
+                    print(g, end=" ")
+                    w += g.req
+                    p += g.point
+            print(f"-> {w}W {p}P", end=" ")
+            print(
+                f"전투력: {com.combat_power_range[0] * 100 - 100:.3f}% - {com.combat_power_range[1] * 100 - 100:.3f}%"
+            )
+
+    # backtracking solving
+    answer = 0
+    assign = None
+    m1 = gem_set_per_core[0][0].combat_power_range[1]  # core1의 최대
+    m2 = gem_set_per_core[1][0].combat_power_range[1]  # core2의 최대
+    m3 = gem_set_per_core[2][0].combat_power_range[1]  # core3의 최대
+
+    for i1, gs1 in enumerate(gem_set_per_core[0]):
+        # 1번째 코어에 대해서, 나머지 코어를 최대로 고른다고 해도 현재 최댓값보다 작다면 pruning
+        current_mask = gs1.used_bitmask
+        if gs1.combat_power_range[1] * m2 * m3 < answer:
+            print("코어1 가지치기(pruning)")
+            print(
+                f"현재 코어가 전투력을 최대 {pp(gs1.combat_power_range[1])} 증가시킬 건데, 나머지 코어 최대치가 각각 {pp(m2)}, {pp(m3)}인 상황\n"
+                f"최선을 가정해도 {pp(gs1.combat_power_range[1] * m2 * m3)}라서 현재 계산된 전투력 {pp(answer)}보다 작음"
+            )
+            print(
+                f"가지치기 덕분에 코어1의 전체 {len(gem_set_per_core[0])}개를 모두 보지 않고 {i1}개만 탐색 후 종료"
+            )
+            break
+
+        for i2, gs2 in enumerate(gem_set_per_core[1]):
+            # core #1과 #2 중에 중복 사용된 젬이 있다면 생략
+            if current_mask & gs2.used_bitmask != 0:
                 continue
-            g = gems[i]
+            current_mask |= gs2.used_bitmask
 
-            if s1 > 0 and g.req + 3 * (s1 - 1) <= e1:
-                candidate = dfs(
-                    e1 - g.req,
-                    e2,
-                    e3,
-                    p1 + g.point,
-                    p2,
-                    p3,
-                    lv1 + g.att,
-                    lv2 + g.skill,
-                    lv3 + g.boss,
-                    used_mask | (1 << i),
-                    s1 - 1,
-                    s2,
-                    s3,
+            # 2번째 코어에 대해서, 나머지 코어를 최대로 고른다고 해도 현재 최댓값보다 작다면 pruning
+            if gs1.combat_power_range[1] * gs2.combat_power_range[1] * m3 < answer:
+                # print("코어2 가지치기(pruning)")
+                # print(
+                #     f"현재 {pp(gs2.combat_power_range[1])} 증가시킬 건데, 나머지 코어 최대치가 {pp(m3)}인 상황"
+                #     f"최선을 가정해도 {pp(gs1.combat_power_range[1] * gs2.combat_power_range[1] * m3)}라서 현재 전투력 {pp(answer)}보다 작음"
+                # )
+                # print(f"전체 {len(gem_set_per_core[1])}가지 중에서 {i2}에서 멈췄어")
+                break
+
+            for gs3 in gem_set_per_core[2]:
+                # 중복 사용된 사용된 젬이 있다면 생략
+                if current_mask & gs3.used_bitmask != 0:
+                    continue
+
+                value = get_exact_combat_score(
+                    cores,
+                    gems,
+                    [gs1.used_bitmask, gs2.used_bitmask, gs3.used_bitmask],
+                    env,
                 )
-                if candidate[0] > best[0]:
-                    best = candidate
+                if value >= answer:
+                    answer = value
+                    assign = [gs1, gs2, gs3]
 
-            if s2 > 0 and g.req + 3 * (s2 - 1) <= e2:
-                candidate = dfs(
-                    e1,
-                    e2 - g.req,
-                    e3,
-                    p1,
-                    p2 + g.point,
-                    p3,
-                    lv1 + g.att,
-                    lv2 + g.skill,
-                    lv3 + g.boss,
-                    used_mask | (1 << i),
-                    s1,
-                    s2 - 1,
-                    s3,
-                )
-                if candidate[0] > best[0]:
-                    best = candidate
-
-            if s3 > 0 and g.req + 3 * (s3 - 1) <= e3:
-                candidate = dfs(
-                    e1,
-                    e2,
-                    e3 - g.req,
-                    p1,
-                    p2,
-                    p3 + g.point,
-                    lv1 + g.att,
-                    lv2 + g.skill,
-                    lv3 + g.boss,
-                    used_mask | (1 << i),
-                    s1,
-                    s2,
-                    s3 - 1,
-                )
-                if candidate[0] > best[0]:
-                    best = candidate
-        return best
-
-    return dfs(
-        e1=core_energy[cores[0].grade],
-        e2=core_energy[cores[1].grade],
-        e3=core_energy[cores[2].grade],
-        p1=0,
-        p2=0,
-        p3=0,
-        lv1=0,  # 공격력
-        lv2=0,  # 추가 피해
-        lv3=0,  # 보스 피해
-        used_mask=0,
-        s1=core_slot_num[cores[0].grade],
-        s2=core_slot_num[cores[1].grade],
-        s3=core_slot_num[cores[2].grade],
-    )
+    return answer, assign
 
 
 def generate_gems(k: int = 10):
-    result = list()
+    """
+    안정, 견고, 불변 중 택1하여
+    의지력 효율 Lv.3-5,
+    질서 포인트 Lv.3-5,
+    부가 옵션 Lv.0-5 으로 임의로 젬을 k개 생성하여 반환합니다.
+    """
+    result: list[Gem] = list()
     import random
 
     for i in range(k):
         gem_type = random.randint(0, 2)  # 0안정 1견고 2침식
         g = Gem(
+            index=i,
             req=gem_type + 8 - random.randint(3, 5),
             point=random.randint(3, 5),
             att=random.randint(0, 5) if gem_type != 2 else 0,
@@ -348,70 +597,48 @@ def generate_gems(k: int = 10):
 
 
 if __name__ == "__main__":
-    v = solve(
-        gems=[
-            Gem(
-                req=3,
-                point=5,
-                att=2,
-                skill=4,
-                boss=0,
-            ),
-            Gem(
-                req=8,
-                point=4,
-                att=2,
-                skill=0,
-                boss=5,
-            ),
-        ],
-        cores=[
-            Core(
-                CoreGrade.LEGENDARY,
-                CoreAttr.ORDER,
-                CoreType.SUN,
-            ),
-            Core(
-                CoreGrade.LEGENDARY,
-                CoreAttr.ORDER,
-                CoreType.MOON,
-            ),
-            Core(
-                CoreGrade.LEGENDARY,
-                CoreAttr.ORDER,
-                CoreType.STAR,
-            ),
-        ],
-    )
-    print(v[0], bin(v[1]))
-    # exit(0)
-    # full test
-    import json
+    gem_count = 60
+    gems = generate_gems(k=gem_count)
+    print(f"랜덤 젬 {gem_count}개 생성 완료")
 
-    # with open("gems.json", "r", encoding="utf-8") as fp:
-    #     raw_gems = json.load(fp)
-    # gems = list()
-    # for v in raw_gems:
-    #     gems.append(Gem(*v))
+    cores = [
+        Core(
+            grade=CoreGrade.유물,
+            attr=CoreAttr.질서,
+            type_=CoreType.해,
+        ),
+        Core(
+            grade=CoreGrade.유물,
+            attr=CoreAttr.질서,
+            type_=CoreType.달,
+        ),
+        Core(
+            grade=CoreGrade.유물,
+            attr=CoreAttr.질서,
+            type_=CoreType.별,
+        ),
+    ]
 
-    v = solve(
-        gems=generate_gems(k=30),
-        cores=[
-            Core(
-                CoreGrade.LEGENDARY,
-                CoreAttr.ORDER,
-                CoreType.SUN,
-            ),
-            Core(
-                CoreGrade.LEGENDARY,
-                CoreAttr.ORDER,
-                CoreType.MOON,
-            ),
-            Core(
-                CoreGrade.RELIC,
-                CoreAttr.ORDER,
-                CoreType.STAR,
-            ),
-        ],
-    )
-    print(v[0], bin(v[1]))
+    print("현재 코어 목록")
+    for c in cores:
+        print("-", c)
+
+    env = Env()
+
+    print("\n\n\n풀이 시작")
+    t = time.perf_counter()
+    v = solve(gems=gems, cores=cores)
+    print(f"풀이 완료 {time.perf_counter() - t:.5f}초\n\n\n")
+
+    combat_score, gem_set_list = v
+    print(f"증가 전투력 {pp(combat_score)}")
+    for i in range(3):
+        used_gems = [g for g in gems if 1 << g.index & gem_set_list[i].used_bitmask]
+        w, p = 0, 0
+        for g in used_gems:
+            w += g.req
+            p += g.point
+
+        print(f"{cores[i]} 의지력 {w}/{env.core_energy[cores[i].grade]} 포인트 {p}P")
+        for g in used_gems:
+            print("-", g)

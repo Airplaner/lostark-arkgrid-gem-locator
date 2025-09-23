@@ -121,7 +121,7 @@ class Core(BaseModel):
     def energy(self):
         """코어 공급 의지력"""
         core_energy = {
-            CoreGrade.영웅: 9,  # 7 -> 9``
+            CoreGrade.영웅: 9,  # 7 -> 9
             CoreGrade.전설: 12,  # 11 -> 12
             CoreGrade.유물: 15,
             CoreGrade.고대: 17,
@@ -634,6 +634,28 @@ def profile_solve():
     solve(gems, cores)
 
 
+def read_gem_from_file(fname: str):
+    import json
+
+    with open(fname, "r", encoding="utf-8") as fp:
+        d = json.load(fp)
+    idx = 0
+    result = list()
+    for item in d:
+        result.append(
+            Gem(
+                index=idx,
+                req=item[0],
+                point=item[1],
+                att=item[2],
+                skill=item[3],
+                boss=item[4],
+            )
+        )
+        idx += 1
+    return result
+
+
 if __name__ == "__main__":
     # lp = LineProfiler()
     # lp.add_function(solve)  # solve 내부를 추적
@@ -644,16 +666,17 @@ if __name__ == "__main__":
 
     gem_count = TOTAL_GEM
     gems = generate_gems(k=gem_count)
+    gems = read_gem_from_file("gems2.json")
     print(f"랜덤 젬 {gem_count}개 생성 완료")
 
     cores = [
         Core(
-            grade=CoreGrade.전설,
+            grade=CoreGrade.유물,
             attr=CoreAttr.질서,
             type_=CoreType.해,
         ),
         Core(
-            grade=CoreGrade.유물,
+            grade=CoreGrade.전설,
             attr=CoreAttr.질서,
             type_=CoreType.달,
         ),

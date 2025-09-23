@@ -25,7 +25,7 @@ def fetch():
     with open("jwt.txt", "r") as fp:
         jwt = fp.read().strip()
 
-    charname = input()
+    charname = input("캐릭터명: ")
     res = requests.get(
         f"https://developer-lostark.game.onstove.com/armories/characters/{charname}/arkgrid",
         headers={"authorization": f"Bearer {jwt}"},
@@ -36,6 +36,7 @@ def fetch():
 
 
 if __name__ == "__main__":
+    fetch()
     with open("arkgrid.json", "r", encoding="utf-8") as fp:
         d = json.load(fp)
 

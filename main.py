@@ -542,7 +542,7 @@ def solve(
             # core #1과 #2 중에 중복 사용된 젬이 있다면 생략
             if current_mask & gs2.used_bitmask != 0:
                 continue
-            current_mask |= gs2.used_bitmask
+            current_mask = gs1.used_bitmask | gs2.used_bitmask
 
             # 2번째 코어에 대해서, 나머지 코어를 최대로 고른다고 해도 현재 최댓값보다 작다면 pruning
             if gs1.combat_power_range[1] * gs2.combat_power_range[1] * m3 < answer:

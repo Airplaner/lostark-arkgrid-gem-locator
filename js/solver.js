@@ -1,5 +1,5 @@
 import { LRUCache } from "./utils.js";
-import { GemSet } from  "./models.js"
+import { GemSet } from "./models.js"
 
 function get_possible_gem_index_combinations(gems, energy, point) {
     // 주어진 gems을 사용해서 요구하는 energy와 point를 모두 충족하는 집합을 반환합니다.
@@ -50,7 +50,7 @@ function get_exact_combat_score(gs1, gs2, gs3) {
     return result;
 }
 
-export function solve(gems, cores) {
+export function solve(gems, cores, max_candidates) {
     // ensure unique indices
     const idxs = new Set(gems.map(g => g.index));
     if (idxs.size !== gems.length) throw new Error('index 중복');
@@ -73,7 +73,13 @@ export function solve(gems, cores) {
         const key = current_mask + '|' + core_idx;
         const hit = cache.get(key);
         if (hit !== undefined) return hit;
-        const res = gem_set_per_core[core_idx].filter(gs => (gs.used_bitmask & current_mask) === 0n);
+        let res = [];
+        for (const gs of gem_set_per_core[core_idx]) {
+            if ((gs.used_bitmask & current_mask) === 0n) {
+                res.push(gs);
+                if (res.length > max_candidates) break;
+            }
+        }
         cache.set(key, res);
         return res;
     }

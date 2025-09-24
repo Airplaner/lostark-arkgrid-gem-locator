@@ -156,11 +156,12 @@ document.getElementById('btnRunSolver').onclick = () => {
     ];
     const cores = [new Core(coreGrades[0], '질서', '해'), new Core(coreGrades[1], '질서', '달'), new Core(coreGrades[2], '질서', '별')];
     const t0 = performance.now();
-    const res = solve(gems, cores);
+    let solve_precision = Number(document.querySelector('input[name="solvePrecision"]:checked').value) || 100
+    const res = solve(gems, cores, Math.pow(10, solve_precision));
     const dt = (performance.now() - t0).toFixed(2);
     if (!res.assign) solverOutput.innerHTML = `<div class="muted">배치 실패! (${dt}ms)</div>`;
     else {
-        solverOutput.innerHTML = "";
+        solverOutput.innerHTML = `<div>전투력 증가량: ${(res.answer * 100 - 100).toFixed(2)}% (${dt}ms 소요)</div>`;
         res.assign.forEach(gs => {
             solverOutput.appendChild(
                 gs.toCard(gems)

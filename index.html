@@ -86,6 +86,7 @@
 
     .row {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       align-items: center
     }
@@ -239,9 +240,19 @@
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
         <button id="btnAddGem">추가</button>
-        <button id="btnRunSolver" class="primary" type="button">실행</button>
       </div>
     </form>
+  </div>
+  <div class="panel solve">
+    <div class="row">
+      <label>분석 범위</label>
+      <label><input type="radio" name="solvePrecision" value="2" checked>보통</label>
+      <label><input type="radio" name="solvePrecision" value="3">느림</label>
+      <label><input type="radio" name="solvePrecision" value="4">매우 정밀</label>
+    </div>
+    <div>
+      <button id="btnRunSolver" class="primary" type="button">실행</button>
+    </div>
   </div>
   <div class="panel">
     <h3>배치 결과</h3>
@@ -253,7 +264,7 @@
     <button id="btnSaveStorage" class="small" style="display: none;">Save to localStorage</button>
     <button id="btnGenerate" type="button">랜덤 젬 샘플 사용</button>
     <button id="btnClearAll" class="small">젬 초기화</button>
-    <button id="btnSaveAsJSONFile" class="small" style="display: none;">Save as JSON File</button>
+    <button id="btnSaveAsJSONFile" class="small">JSON 저장</button>
     <div class="spacer"></div>
     <label for="searchBox" style="display: none;">Search:</label>
     <input id="searchBox" placeholder="filter gems" style="display: none;" />

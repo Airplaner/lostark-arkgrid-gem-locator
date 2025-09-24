@@ -118,7 +118,7 @@ export class Gem {
         const optionArray = this.optionStrArray();
         const card = document.createElement('div'); card.className = 'gem';
         card.style = 'width: 180px'; // 고정폭
-        const h = document.createElement('h3'); h.textContent = `${this.index}: ${this.req}W ${this.point}P`;
+        const h = document.createElement('h3'); h.textContent = `${this.req}W ${this.point}P`;
         const p = document.createElement('div');
         optionArray.forEach(text => {
             const div = document.createElement('div');

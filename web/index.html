@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gems Manager (Converted from Python)</title>
+  <style>
+    :root {
+      --bg: #f7f8fb;
+      --card: #fff;
+      --muted: #6b7280
+    }
+
+    body {
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background: var(--bg);
+      max-width: 1100px;
+      margin: 24px auto;
+      padding: 18px
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin: 0 0 8px
+    }
+
+    .muted {
+      color: var(--muted)
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 12px 0
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid #e6e9ef;
+      padding: 12px;
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(17, 24, 39, 0.03)
+    }
+
+    #gemsList {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+      margin-top: 12px
+    }
+
+    .gem {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      background: linear-gradient(180deg, #fff, #fbfdff)
+    }
+
+    .gem h3 {
+      margin: 0 0 6px 0;
+      font-size: 1.05rem
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center
+    }
+
+    button {
+      cursor: pointer;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc
+    }
+
+    button.primary {
+      background: #2563eb;
+      color: #fff;
+      border-color: #1d4ed8
+    }
+
+    .small {
+      padding: 5px 8px;
+      font-size: .85rem
+    }
+
+    label {
+      font-weight: 600
+    }
+
+    form.addGem {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 8px;
+      align-items: end
+    }
+
+    .hidden {
+      display: none
+    }
+
+    .editable {
+      border: 1px dashed #cbd5e1;
+      padding: 6px;
+      border-radius: 6px
+    }
+
+    input[type=file] {
+      display: block
+    }
+
+    .controls .spacer {
+      flex: 1
+    }
+
+    pre {
+      white-space: pre-wrap;
+      background: #0f172a;
+      color: #e6eef8;
+      padding: 12px;
+      border-radius: 8px
+    }
+  </style>
+  <script type="module" src="js/utils.js"></script>
+  <script type="module" src="js/models.js"></script>
+  <script type="module" src="js/solver.js"></script>
+  <script type="moduel" src="js/ui.js"></script>
+</head>
+
+<body>
+  <h1>Gems Manager — converted webpage</h1>
+  <p class="muted">Upload a JSON file (original Python read replaced by file upload). All gems persist to
+    <code>localStorage</code>. You can add / edit / delete gems. A lightweight LRU cache is used in solver. Core grades
+    can be edited below. OCR integration (Tesseract.js) is possible for pasted images.
+  </p>
+
+  <div class="panel controls">
+    <input id="fileInput" type="file" accept="application/json">
+    <button id="btnLoadStorage" class="small">Load from localStorage</button>
+    <button id="btnSaveStorage" class="small">Save to localStorage</button>
+    <button id="btnClearAll" class="small">Clear localStorage</button>
+    <button id="btnSaveAsJSONFile" class="small">Save as JSON File</button>
+    <div class="spacer"></div>
+    <label for="searchBox">Search:</label>
+    <input id="searchBox" placeholder="filter gems" />
+  </div>
+
+  <div class="panel" id="coresPanel">
+    <h3>Edit Cores (fixed 3: 해, 달, 별)</h3>
+    <div class="row">
+      해:
+      <label><input type="radio" name="core0" value="영웅">영웅</label>
+      <label><input type="radio" name="core0" value="전설">전설</label>
+      <label><input type="radio" name="core0" value="유물">유물</label>
+      <label><input type="radio" name="core0" value="고대" checked>고대</label>
+    </div>
+    <div class="row">
+      별:
+      <label><input type="radio" name="core1" value="영웅">영웅</label>
+      <label><input type="radio" name="core1" value="전설">전설</label>
+      <label><input type="radio" name="core1" value="유물">유물</label>
+      <label><input type="radio" name="core1" value="고대" checked>고대</label>
+    </div>
+        <div class="row">
+      달:
+      <label><input type="radio" name="core2" value="영웅">영웅</label>
+      <label><input type="radio" name="core2" value="전설">전설</label>
+      <label><input type="radio" name="core2" value="유물">유물</label>
+      <label><input type="radio" name="core2" value="고대" checked>고대</label>
+    </div>
+  </div>
+  <div class="panel" id="addPanel">
+    <h3>Add / Edit Gem</h3>
+    <form id="addForm" class="addGem">
+      <div>
+        <div class="row"><label>req (의지력)</label><input id="f_req" type="number" min="3" max="9" required></div>
+        <div class="row"><label>point (P)</label><input id="f_point" type="number" min="1" max="5" required></div>
+        <div class="row"><label>att</label><input id="f_att" type="number" min="0" max="5"></div>
+        <div class="row"><label>skill</label><input id="f_skill" type="number" min="0" max="5"></div>
+        <div class="row"><label>boss</label><input id="f_boss" type="number" min="0" max="5"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button id="btnAddGem" class="primary">Add / Update Gem</button>
+        <button id="btnGenerate" type="button">Generate random (demo)</button>
+        <button id="btnRunSolver" type="button">Run solver</button>
+      </div>
+    </form>
+  </div>
+  <div class="panel" style="margin-top:12px;">
+    <h3>Solver Output</h3>
+    <div id="solverOutput"><em class="muted">No result yet.</em></div>
+  </div>
+  <div id="gemsList" class="panel"></div>
+  <script type="module" src="js/main.js"></script>
+</body>
+
+</html>

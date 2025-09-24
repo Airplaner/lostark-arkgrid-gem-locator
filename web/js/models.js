@@ -1,0 +1,77 @@
+export class Core {
+    constructor(grade, attr, type_) {
+        this.grade = grade; this.attr = attr; this.type_ = type_;
+        this.coeff = compute_coeff(this.grade, this.attr, this.type_);
+    }
+    energy() {
+        const map = { '영웅': 9, '전설': 12, '유물': 15, '고대': 17 };
+        return map[this.grade] || 9;
+    }
+    target_point() {
+        const map = { '영웅': 0, '전설': 14, '유물': 17, '고대': 17 };
+        return map[this.grade] || 0;
+    }
+}
+function compute_coeff(grade, attr, type_) {
+    const zero10 = Array(10).fill(0);
+    if (grade === '영웅') return zero10.concat(Array(11).fill(150));
+    if (grade === '전설') return zero10.concat(Array(4).fill(150)).concat(Array(7).fill(400));
+    if (grade === '유물') return zero10.concat(Array(4).fill(150)).concat(Array(3).fill(400)).concat([750, 767, 783, 800]);
+    if (grade === '고대') return zero10.concat(Array(4).fill(150)).concat(Array(3).fill(400)).concat([850, 867, 883, 900]);
+    return Array(21).fill(0);
+}
+
+
+const gem_possible_req = {
+    'true,true,true': [3, 9],
+    'true,true,false': [3, 8],
+    'true,false,true': [3, 9],
+    'true,false,false': [3, 7],
+    'false,true,true': [4, 9],
+    'false,true,false': [4, 8],
+    'false,false,true': [5, 9],
+};
+
+export class Gem {
+    constructor(obj) {
+        // obj: {index, req, point, att, skill, boss}
+        this.index = BigInt(obj.index);
+        this.req = Number(obj.req);
+        this.point = Number(obj.point);
+        this.att = Number(obj.att) || 0;
+        this.skill = Number(obj.skill) || 0;
+        this.boss = Number(obj.boss) || 0;
+        // validate
+        this._validate();
+    }
+    _validate() {
+        if (this.att > 0 && this.skill > 0 && this.boss > 0) throw new Error('젬은 공격력, 추가 피해, 보스 피해 중 최대 2가지만 가질 수 있습니다.');
+        let poss_alpha = true, poss_beta = true, poss_gamma = true;
+        if (this.att) poss_gamma = false;
+        if (this.skill) poss_beta = false;
+        if (this.boss) poss_alpha = false;
+        const key = `${poss_alpha},${poss_beta},${poss_gamma}`;
+        const [ge, le] = gem_possible_req[key];
+        if (!(this.req >= ge && this.req <= le)) throw new Error('예상되는 젬 세부 타입에서 나올 수 없는 필요 의지력입니다.');
+    }
+    toString() {
+        let s = `[${String(this.index).padStart(2, ' ')}: ${this.req}W ${this.point}P`;
+        if (this.att) s += ` 공${this.att}`;
+        if (this.skill) s += ` 추${this.skill}`;
+        if (this.boss) s += ` 보${this.boss}`;
+        s += `]`;
+        return s;
+    }
+}
+
+export class GemSet {
+    constructor(gems, core) {
+        this.att = 0; this.skill = 0; this.boss = 0; this.point = 0; this.used_bitmask = 0n;
+        for (const gem of gems) {
+            this.used_bitmask |= 1n << gem.index;
+            this.att += gem.att; this.skill += gem.skill; this.boss += gem.boss; this.point += gem.point;
+        }
+        this.core_combat_score = core.coeff[this.point] || 0;
+        this.max_combat_power = ((this.core_combat_score + 10000) / 10000) * ((Math.floor(this.att * 400 / 120) + 10000) / 10000) * ((Math.floor(this.skill * 700 / 120) + 10000) / 10000) * ((Math.floor(this.boss * 1000 / 120) + 10000) / 10000);
+    }
+}

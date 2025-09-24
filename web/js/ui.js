@@ -1,0 +1,157 @@
+// ----------------------------- UI Logic -----------------------------
+import { solve } from "./solver.js";
+import { Gem, Core } from "./models.js"
+
+const fileInput = document.getElementById('fileInput');
+const gemsListEl = document.getElementById('gemsList');
+const addForm = document.getElementById('addForm');
+const solverOutput = document.getElementById('solverOutput');
+const searchBox = document.getElementById('searchBox');
+
+let gems = [];
+
+function reindexGems() { gems.forEach((g, i) => g.index = BigInt(i)); }
+
+export function renderGems(filter) {
+    reindexGems();
+    gemsListEl.innerHTML = '';
+    const q = (filter || '').toString().toLowerCase();
+    for (const g of gems) {
+        const s = g.toString();
+        if (q && !s.toLowerCase().includes(q)) continue;
+        const card = document.createElement('div'); card.className = 'gem';
+        const h = document.createElement('h3'); h.textContent = `${g.req}W ${g.point}P`;
+        const p = document.createElement('div'); p.textContent = s;
+        const row = document.createElement('div'); row.className = 'row';
+        const btnEdit = document.createElement('button'); btnEdit.textContent = 'Edit'; btnEdit.onclick = () => fillForm(g);
+        const btnDel = document.createElement('button'); btnDel.textContent = 'Delete'; btnDel.onclick = () => { if (confirm('Delete?')) { gems = gems.filter(x => x.index !== g.index); renderGems(searchBox.value); } };
+        row.appendChild(btnEdit); row.appendChild(btnDel);
+        card.appendChild(h); card.appendChild(p); card.appendChild(row);
+        gemsListEl.appendChild(card);
+    }
+    if (!gems.length) gemsListEl.innerHTML = '<div class="muted">No gems. Upload a JSON or generate sample gems.</div>';
+}
+
+function fillForm(g) {
+    document.getElementById('f_req').value = g.req;
+    document.getElementById('f_point').value = g.point;
+    document.getElementById('f_att').value = g.att;
+    document.getElementById('f_skill').value = g.skill;
+    document.getElementById('f_boss').value = g.boss;
+}
+
+function saveToLocal() {
+    const data = gems.map(g => [g.req, g.point, g.att, g.skill, g.boss]);
+    localStorage.setItem('gems_data', JSON.stringify(data));
+    alert('saved to localStorage');
+}
+function loadFromLocal() {
+    const raw = localStorage.getItem('gems_data');
+    if (!raw) { alert('no gems in localStorage'); return; }
+    try {
+        const arr = JSON.parse(raw);
+        gems = arr.map((item, idx) => new Gem({ index: idx, req: item[0], point: item[1], att: item[2], skill: item[3], boss: item[4] }));
+        renderGems();
+    } catch (e) { alert('failed to load: ' + e.message); }
+}
+
+document.getElementById('btnLoadStorage').onclick = () => loadFromLocal();
+document.getElementById('btnSaveStorage').onclick = () => saveToLocal();
+document.getElementById('btnClearAll').onclick = () => { if (confirm('Clear localStorage?')) { localStorage.removeItem('gems_data'); gems = []; renderGems(); } };
+
+fileInput.addEventListener('change', (ev) => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            gems = data.map((item, idx) => new Gem({ index: idx, req: item[0], point: item[1], att: item[2], skill: item[3], boss: item[4] }));
+            renderGems();
+        } catch (err) { alert('Invalid JSON file: ' + err.message); }
+    };
+    reader.readAsText(f, 'utf-8');
+});
+
+addForm.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    try {
+        const obj = {
+            index: BigInt(gems.length),
+            req: Number(document.getElementById('f_req').value),
+            point: Number(document.getElementById('f_point').value),
+            att: Number(document.getElementById('f_att').value) || 0,
+            skill: Number(document.getElementById('f_skill').value) || 0,
+            boss: Number(document.getElementById('f_boss').value) || 0,
+        };
+        const g = new Gem(obj);
+        gems.push(g);
+        renderGems(searchBox.value);
+        addForm.reset();
+    } catch (err) { alert('invalid gem: ' + err.message); }
+});
+
+document.getElementById('btnGenerate').onclick = () => {
+    const k = 50; const out = []; let seed = 42; function rand() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed; }
+    for (let i = 0; i < k; i++) {
+        const gem_type = rand() % 3;
+        const req = gem_type + 8 - (3 + (rand() % 3));
+        const point = 3 + (rand() % 3);
+        const att = gem_type !== 2 ? (rand() % 6) : 0;
+        const skill = gem_type !== 1 ? (rand() % 6) : 0;
+        const boss = gem_type !== 0 ? (rand() % 6) : 0;
+        out.push(new Gem({ index: i, req, point, att, skill, boss }));
+    }
+    gems = out; renderGems();
+};
+
+document.getElementById('btnRunSolver').onclick = () => {
+    // try {
+    const coreGrades = [
+        document.querySelector('input[name="core0"]:checked').value,
+        document.querySelector('input[name="core1"]:checked').value,
+        document.querySelector('input[name="core2"]:checked').value
+    ];
+    const cores = [new Core(coreGrades[0], '질서', '해'), new Core(coreGrades[1], '질서', '달'), new Core(coreGrades[2], '질서', '별')];
+    const t0 = performance.now();
+    const res = solve(gems, cores);
+    const dt = (performance.now() - t0).toFixed(2);
+    if (!res.assign) solverOutput.innerHTML = `<div class="muted">No valid assignments. (${dt}ms)</div>`;
+    else {
+        const [gs1, gs2, gs3] = res.assign;
+        solverOutput.innerHTML = `<div>Answer: <strong>${res.answer.toFixed(6)}</strong> (${dt}ms)</div>` +
+            `<div style="margin-top:8px;"><strong>Core 1</strong>: ${formatGemSet(gs1)}</div>` +
+            `<div><strong>Core 2</strong>: ${formatGemSet(gs2)}</div>` +
+            `<div><strong>Core 3</strong>: ${formatGemSet(gs3)}</div>`;
+    }
+    // } catch (err) { alert('solver error: ' + err.message); }
+};
+
+function formatGemSet(gs) {
+    console.log(gs)
+    console.log(gs.used_bitmask.toString(2))
+    const included = gems.filter(g => (gs.used_bitmask & (1 << g.index)) !== 0).map(g => g.toString()).join(' ');
+    return `${included} -> ${gs.point}P, att${gs.att}, skill${gs.skill}, boss${gs.boss}`;
+}
+
+searchBox.addEventListener('input', () => renderGems(searchBox.value));
+
+renderGems();
+
+export function gemsToJSON(gemList, filename = 'gems.json') {
+    const outputArray = gemList.map(gem => [
+        gem.req,
+        gem.point,
+        gem.att,
+        gem.skill,
+        gem.boss
+    ]);
+    const blob = new Blob([JSON.stringify(outputArray, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+document.getElementById('btnSaveAsJSONFile').onclick = () => { gemsToJSON(gems, "gems.json") };

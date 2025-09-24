@@ -16,13 +16,45 @@ export class Core {
     }
 }
 function compute_coeff(grade, attr, type_) {
-    const zero10 = Array(10).fill(0);
-    if (grade === '영웅') return zero10.concat(Array(11).fill(150));
-    if (grade === '전설') return zero10.concat(Array(4).fill(150)).concat(Array(7).fill(400));
-    if (grade === '유물') return zero10.concat(Array(4).fill(150)).concat(Array(3).fill(400)).concat([750, 767, 783, 800]);
-    if (grade === '고대') return zero10.concat(Array(4).fill(150)).concat(Array(3).fill(400)).concat([850, 867, 883, 900]);
-    return Array(21).fill(0);
+    // 모두 21개의 값으로 고정
+    const coeffMap = {
+        '영웅': {
+            '질서': {
+                '해': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150],
+                '달': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150],
+                '별': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150, 150],
+            }
+        },
+        '전설': {
+            '질서': {
+                '해': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 400, 400, 400, 400, 400, 400, 400],
+                '달': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 400, 400, 400, 400, 400, 400, 400],
+                '별': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 250, 250, 250, 250, 250, 250, 250],
+            }
+        },
+        '유물': {
+            '질서': {
+                '해': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 400, 400, 400, 750, 767, 783, 800],
+                '달': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 400, 400, 400, 750, 767, 783, 800],
+                '별': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, 100, 100, 100, 250, 250, 250, 450, 467, 483, 500],
+            }
+        },
+        '고대': {
+            '질서': {
+                '해': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 400, 400, 400, 850, 867, 883, 900],
+                '달': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 400, 400, 400, 850, 867, 883, 900],
+                '별': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 150, 150, 150, 150, 250, 250, 250, 550, 567, 583, 600],
+            }
+        }
+    };
+
+    if (coeffMap[grade] && coeffMap[grade][attr] && coeffMap[grade][attr][type_]) {
+        return coeffMap[grade][attr][type_];
+    } else {
+        return Array(21).fill(0);
+    }
 }
+
 
 
 const gem_possible_req = {
@@ -86,7 +118,7 @@ export class Gem {
         const optionArray = this.optionStrArray();
         const card = document.createElement('div'); card.className = 'gem';
         card.style = 'width: 180px'; // 고정폭
-        const h = document.createElement('h3'); h.textContent = `${this.req}W ${this.point}P`;
+        const h = document.createElement('h3'); h.textContent = `${this.index}: ${this.req}W ${this.point}P`;
         const p = document.createElement('div');
         optionArray.forEach(text => {
             const div = document.createElement('div');

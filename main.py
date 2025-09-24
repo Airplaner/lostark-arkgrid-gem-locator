@@ -143,48 +143,6 @@ class Core(BaseModel):
         return core_target_point[self.grade]
 
 
-class Env:
-    def __init__(self):
-        # load from txt
-        data: dict[GemOptionType, list[int]] = dict()
-        # data[i]는 해당 옵션이 Lv. i일 때 전투력 증가량
-        with open("./data/attack.txt") as fp:
-            data[GemOptionType.공격력] = list(map(int, fp.readlines()))
-            assert len(data[GemOptionType.공격력]) == MAX_GEM_OPTION_LEVEL + 1
-
-        with open("./data/skill.txt") as fp:
-            data[GemOptionType.추가피해] = list(map(int, fp.readlines()))
-            assert len(data[GemOptionType.추가피해]) == MAX_GEM_OPTION_LEVEL + 1
-
-        with open("./data/boss.txt") as fp:
-            data[GemOptionType.보스피해] = list(map(int, fp.readlines()))
-            assert len(data[GemOptionType.보스피해]) == MAX_GEM_OPTION_LEVEL + 1
-
-        self.data = data
-
-        # init slope min max
-        # 같은 공격력 Lv.5 여도, Lv.0->5되는 것과 Lv.115->120되는 것의 전투력 증가 비율은 차이가 있다.
-        # 각 공 추 보에 대해서 lv.1-lv.20의 증감량의 최소 및 최대를 미리 구해놓음
-        # 20인 이유는 하나의 코어에서 달성할 수 있는 옵션 레벨은 최대 4개*5레벨 = 20레벨
-        self.slopes: dict[GemOptionType, dict[int, tuple[int, int]]] = {
-            k: dict() for k in GemOptionType
-        }
-        for k in data:
-            for lv in range(1, 21):
-                i = 0
-                _min, _max = None, None
-                while i + lv < MAX_GEM_OPTION_LEVEL:
-                    coeff = (data[k][i + lv] + 10000) / (data[k][i] + 10000)
-                    i += 1
-
-                    if _min is None or _min > coeff:
-                        _min = coeff
-                    if _max is None or _max < coeff:
-                        _max = coeff
-
-                self.slopes[k][lv] = _min, _max
-
-
 gem_possible_req = {
     (True, True, True): (3, 9),  # 안정, 견고, 불변
     (True, True, False): (3, 8),  # 안정, 견고
@@ -397,7 +355,6 @@ class GemSet:
         self,
         gems: list[Gem],  # 젬 목록
         core: Core,  # 코어
-        env: Env,
     ):
         # 현재 코어에 장착된 젬에서
         # 공격력, 추가 피해, 보스 피해 레벨의 합산
@@ -416,27 +373,23 @@ class GemSet:
         # 나중에 정확한 전투력 계산을 하기 위해 필요하니 public member로 저장
         self.core_combat_score = core.coeff[self.point]
 
-        # 공, 추, 보는 실제 전투력 증가량이 다름
-        default_power = (self.core_combat_score + 10000) / 10000
-        min_power, max_power = default_power, default_power
-        if self.att:
-            min_power *= env.slopes[GemOptionType.공격력][self.att][0]
-            max_power *= env.slopes[GemOptionType.공격력][self.att][1]
-
-        if self.skill:
-            min_power *= env.slopes[GemOptionType.추가피해][self.skill][0]
-            max_power *= env.slopes[GemOptionType.추가피해][self.skill][1]
-
-        if self.boss:
-            min_power *= env.slopes[GemOptionType.보스피해][self.boss][0]
-            max_power *= env.slopes[GemOptionType.보스피해][self.boss][1]
-
-        self.combat_power_range = min_power, max_power
+        # 현재 코어+젬으로 올릴 수 있는 최대 전투력
+        self.max_combat_power = (
+            (self.core_combat_score + 10000)
+            / 10000
+            * (self.att * 400 // 120 + 10000)
+            / 10000
+            * (self.skill * 700 // 120 + 10000)
+            / 10000
+            * (self.boss * 1000 // 120 + 10000)
+            / 10000
+        )
 
 
 def get_exact_combat_score(
-    gem_sets: tuple[GemSet, GemSet, GemSet],
-    env: Env,
+    gs1: GemSet,
+    gs2: GemSet,
+    gs3: GemSet,
 ):
     """
     주어진 GemSet들의 정확한 전투력을 계산
@@ -446,16 +399,25 @@ def get_exact_combat_score(
     result = 1
     att, skill, boss = 0, 0, 0
 
-    for gs in gem_sets:
-        att += gs.att
-        skill += gs.skill
-        boss += gs.boss
-        result *= (gs.core_combat_score + 10000) / 10000
+    att += gs1.att
+    skill += gs1.skill
+    boss += gs1.boss
+    result *= (gs1.core_combat_score + 10000) / 10000
+
+    att += gs2.att
+    skill += gs2.skill
+    boss += gs2.boss
+    result *= (gs2.core_combat_score + 10000) / 10000
+
+    att += gs3.att
+    skill += gs3.skill
+    boss += gs3.boss
+    result *= (gs3.core_combat_score + 10000) / 10000
 
     # 전체 공격력, 추피, 보피 레벨로 인한 전투력 반영
-    result *= (env.data[GemOptionType.공격력][att] + 10000) / 10000
-    result *= (env.data[GemOptionType.추가피해][skill] + 10000) / 10000
-    result *= (env.data[GemOptionType.보스피해][boss] + 10000) / 10000
+    result *= (att * 400 // 120 + 10000) / 10000
+    result *= (skill * 700 // 120 + 10000) / 10000
+    result *= (boss * 1000 // 120 + 10000) / 10000
     return result
 
 
@@ -465,9 +427,6 @@ def solve(
 ):
     # assertion
     assert len(set([g.index for g in gems])) == len(gems)  # index 중복x
-
-    # 환경 설정
-    env = Env()
 
     # 코어 종류 분리
     order_cores = [c for c in cores if c.attr == CoreAttr.질서]
@@ -491,10 +450,10 @@ def solve(
         # - 전투력 증가 범위 계산
         for gem_index_list in possible_gem_index_combinations:
             possible_combination.append(
-                GemSet([g for g in gems if g.index in gem_index_list], core, env)
+                GemSet([g for g in gems if g.index in gem_index_list], core)
             )
         # GemSet을 전투력 증가 범위 최대값에 대해 내림차순으로 정렬 (for prunning)
-        possible_combination.sort(key=lambda x: x.combat_power_range[1], reverse=True)
+        possible_combination.sort(key=lambda x: x.max_combat_power, reverse=True)
         gem_set_per_core.append(possible_combination)
 
         # DEBUGGING
@@ -504,18 +463,16 @@ def solve(
         print(f"현재 가능한 조합: {len(possible_combination)}개")
         top_k = 5
         print(f"상위 {top_k}개 조합")
-        for com in possible_combination[:top_k]:
+        for gs in possible_combination[:top_k]:
             print("-", end=" ")
             w, p = 0, 0
             for g in gems:
-                if 1 << g.index & com.used_bitmask:
+                if 1 << g.index & gs.used_bitmask:
                     print(g, end=" ")
                     w += g.req
                     p += g.point
             print(f"-> {w}W {p}P", end=" ")
-            print(
-                f"전투력: {com.combat_power_range[0] * 100 - 100:.3f}% - {com.combat_power_range[1] * 100 - 100:.3f}%"
-            )
+            print(f"전투력: {pp(gs.max_combat_power)}%")
 
     # backtracking solving
 
@@ -530,15 +487,15 @@ def solve(
 
     answer = 0
     assign = None
-    globla_c1_max = gem_set_per_core[0][0].combat_power_range[1]  # core1의 최대
-    global_c2_max = gem_set_per_core[1][0].combat_power_range[1]  # core2의 최대
-    global_c3_max = gem_set_per_core[2][0].combat_power_range[1]  # core3의 최대
+    globla_c1_max = gem_set_per_core[0][0].max_combat_power  # core1의 최대
+    global_c2_max = gem_set_per_core[1][0].max_combat_power  # core2의 최대
+    global_c3_max = gem_set_per_core[2][0].max_combat_power  # core3의 최대
 
     for gs1 in gem_set_per_core[0]:
         # 1번째 코어에 대해서
         # 나머지 코어를 중복 무관 최대로 고른다고 가정해도 현재 최댓값보다 작다면 이후 코어는 볼 필요 없다
         # 사유는 모든 GemSet list는 내림차순 정렬되어 있음
-        if gs1.combat_power_range[1] * global_c2_max * global_c3_max < answer:
+        if gs1.max_combat_power * global_c2_max * global_c3_max < answer:
             break
 
         # 2번째 코어에 사용 가능한 GemSet을 가져온다
@@ -549,10 +506,7 @@ def solve(
         for gs2 in candidates_gs2:
             # 2번째 코어에 대해서
             # 나머지 코어를 중복 무관 최대로 고른다고 가정해도 현재 최댓값보다 작다면 이후 코어는 볼 필요 없다
-            if (
-                gs1.combat_power_range[1] * gs2.combat_power_range[1] * global_c3_max
-                < answer
-            ):
+            if gs1.max_combat_power * gs2.max_combat_power * global_c3_max < answer:
                 break
 
             # 3번째 코어에 사용 가능한 GemSet을 가져온다
@@ -565,32 +519,16 @@ def solve(
 
             for gs3 in candidates_gs3:
                 if (
-                    gs1.combat_power_range[1]
-                    * gs2.combat_power_range[1]
-                    * gs3.combat_power_range[1]
+                    gs1.max_combat_power * gs2.max_combat_power * gs3.max_combat_power
                     < answer
                 ):
                     # 정확한 계산 전에 최댓값 곱해서 정답보다 적으면 더 이상 볼 필요 없다
                     break
 
-                value = get_exact_combat_score((gs1, gs2, gs3), env)
-                assert (
-                    (
-                        gs1.combat_power_range[0]
-                        * gs2.combat_power_range[0]
-                        * gs3.combat_power_range[0]
-                    )
-                    <= value
-                    <= (
-                        gs1.combat_power_range[1]
-                        * gs2.combat_power_range[1]
-                        * gs3.combat_power_range[1]
-                    )
-                )
-
+                value = get_exact_combat_score(gs1, gs2, gs3)
                 if value >= answer:
                     answer = value
-                    assign = [gs1, gs2, gs3]
+                    assign = (gs1, gs2, gs3)
 
     return answer, assign
 
@@ -691,8 +629,6 @@ if __name__ == "__main__":
     print("현재 코어 목록")
     for c in cores:
         print("-", c)
-
-    env = Env()
 
     # import cProfile
     # import pstats

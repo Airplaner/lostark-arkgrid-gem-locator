@@ -10,6 +10,37 @@ const searchBox = document.getElementById('searchBox');
 
 let gems = [];
 
+const STORAGE_KEY = "myGems";
+function saveGems() {
+    const serialized = JSON.stringify(gems, (key, value) => {
+        return typeof value === 'bigint' ? value.toString() : value;
+    });
+    localStorage.setItem("myGems", serialized);
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+        try {
+            let raw_gems = JSON.parse(saved);
+            raw_gems.forEach(e => {
+                gems.push(new Gem({
+                    index: BigInt(e.index),
+                    req: e.req,
+                    point: e.point,
+                    att: e.att,
+                    skill: e.skill,
+                    boss: e.boss,
+                }))
+            });
+            // console.log("Loaded gems from storage:", gems);
+            renderGems();
+        } catch (e) {
+            // console.error("Failed to parse saved gems:", e);
+        }
+    }
+});
+
 function reindexGems() { gems.forEach((g, i) => g.index = BigInt(i)); }
 
 export function renderGems(filter) {
@@ -64,7 +95,7 @@ function loadFromLocal() {
 
 document.getElementById('btnLoadStorage').onclick = () => loadFromLocal();
 document.getElementById('btnSaveStorage').onclick = () => saveToLocal();
-document.getElementById('btnClearAll').onclick = () => { if (confirm('Clear localStorage?')) { localStorage.removeItem('gems_data'); gems = []; renderGems(); } };
+document.getElementById('btnClearAll').onclick = () => { if (confirm('모든 젬을 삭제하겠습니까?')) { localStorage.removeItem(STORAGE_KEY); gems = []; renderGems(); } };
 
 fileInput.addEventListener('change', (ev) => {
     const f = ev.target.files[0];
@@ -98,6 +129,7 @@ addForm.addEventListener('submit', (ev) => {
             const radios = document.querySelectorAll(`input[name="${name}"]`);
             radios.forEach(r => r.checked = r.value == 0);
         }
+        saveGems();
     } catch (err) { alert('invalid gem: ' + err.message); }
 });
 
@@ -112,29 +144,29 @@ document.getElementById('btnGenerate').onclick = () => {
         const boss = gem_type !== 0 ? (rand() % 6) : 0;
         out.push(new Gem({ index: i, req, point, att, skill, boss }));
     }
-    gems = out; renderGems();
+    gems = out; renderGems(); saveGems();
 };
 
 document.getElementById('btnRunSolver').onclick = () => {
     // try {
-        const coreGrades = [
-            document.querySelector('input[name="core0"]:checked').value,
-            document.querySelector('input[name="core1"]:checked').value,
-            document.querySelector('input[name="core2"]:checked').value
-        ];
-        const cores = [new Core(coreGrades[0], '질서', '해'), new Core(coreGrades[1], '질서', '달'), new Core(coreGrades[2], '질서', '별')];
-        const t0 = performance.now();
-        const res = solve(gems, cores);
-        const dt = (performance.now() - t0).toFixed(2);
-        if (!res.assign) solverOutput.innerHTML = `<div class="muted">배치 실패! (${dt}ms)</div>`;
-        else {
-            solverOutput.innerHTML = "";
-            res.assign.forEach(gs => {
-                solverOutput.appendChild(
-                    gs.toCard(gems)
-                )
-            });
-        }
+    const coreGrades = [
+        document.querySelector('input[name="core0"]:checked').value,
+        document.querySelector('input[name="core1"]:checked').value,
+        document.querySelector('input[name="core2"]:checked').value
+    ];
+    const cores = [new Core(coreGrades[0], '질서', '해'), new Core(coreGrades[1], '질서', '달'), new Core(coreGrades[2], '질서', '별')];
+    const t0 = performance.now();
+    const res = solve(gems, cores);
+    const dt = (performance.now() - t0).toFixed(2);
+    if (!res.assign) solverOutput.innerHTML = `<div class="muted">배치 실패! (${dt}ms)</div>`;
+    else {
+        solverOutput.innerHTML = "";
+        res.assign.forEach(gs => {
+            solverOutput.appendChild(
+                gs.toCard(gems)
+            )
+        });
+    }
     // } catch (err) { alert('solver error: ' + err.message); }
 };
 

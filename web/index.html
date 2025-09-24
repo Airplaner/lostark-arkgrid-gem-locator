@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Gems Manager (Converted from Python)</title>
+  <title>아크 그리드 젬 배치기</title>
   <style>
     :root {
       --bg: #f7f8fb;
@@ -25,6 +25,10 @@
       margin: 0 0 8px
     }
 
+    .gem-option {
+      margin: 0 0 8px
+    }
+
     .muted {
       color: var(--muted)
     }
@@ -41,14 +45,31 @@
       border: 1px solid #e6e9ef;
       padding: 12px;
       border-radius: 10px;
-      box-shadow: 0 6px 18px rgba(17, 24, 39, 0.03)
+      box-shadow: 0 6px 18px rgba(17, 24, 39, 0.03);
+      margin-top: 12px;
     }
 
     #gemsList {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 12px;
       margin-top: 12px
+    }
+
+    .gemSet {
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      background: linear-gradient(180deg, #fff, #fbfdff);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 0 0 8px;
+    }
+
+    .gemSet .assigned-gems {
+      display: flex;
+      gap: 8px;
     }
 
     .gem {
@@ -124,6 +145,17 @@
       padding: 12px;
       border-radius: 8px
     }
+
+    .panel .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel .row label:first-child {
+      width: 100px;
+      flex-shrink: 0;
+    }
   </style>
   <script type="module" src="js/utils.js"></script>
   <script type="module" src="js/models.js"></script>
@@ -132,13 +164,15 @@
 </head>
 
 <body>
-  <h1>Gems Manager — converted webpage</h1>
-  <p class="muted">Upload a JSON file (original Python read replaced by file upload). All gems persist to
-    <code>localStorage</code>. You can add / edit / delete gems. A lightweight LRU cache is used in solver. Core grades
-    can be edited below. OCR integration (Tesseract.js) is possible for pasted images.
+  <h1>아크 그리드 젬 배치기 - alpha</h1>
+  <p class="muted">
+    전투력 증가량을 기반으로 최적화된 젬 배치 기능을 제공합니다.<br>
+    - 전설 등급의 경우 14P, 유물, 고대 등급의 경우 17P를 반드시 달성하는 것을 목표로 합니다.<br>
+    - 질서 코어만 제공 중<br>
+    - 가능한 조합이 너무 많은 경우 응답 없이 멈출 수 있습니다.<br>
   </p>
 
-  <div class="panel controls">
+  <div class="panel controls" style="display: none;">
     <input id="fileInput" type="file" accept="application/json">
     <button id="btnLoadStorage" class="small">Load from localStorage</button>
     <button id="btnSaveStorage" class="small">Save to localStorage</button>
@@ -150,49 +184,82 @@
   </div>
 
   <div class="panel" id="coresPanel">
-    <h3>Edit Cores (fixed 3: 해, 달, 별)</h3>
+    <h3>코어 등급</h3>
     <div class="row">
-      해:
-      <label><input type="radio" name="core0" value="영웅">영웅</label>
+      <label>질서의 해</label>
+      <label style="display: none;"><input type="radio" name="core0" value="영웅">영웅</label>
       <label><input type="radio" name="core0" value="전설">전설</label>
-      <label><input type="radio" name="core0" value="유물">유물</label>
-      <label><input type="radio" name="core0" value="고대" checked>고대</label>
+      <label><input type="radio" name="core0" value="유물" checked>유물</label>
+      <label><input type="radio" name="core0" value="고대">고대</label>
     </div>
     <div class="row">
-      별:
-      <label><input type="radio" name="core1" value="영웅">영웅</label>
+      <label>질서의 달</label>
+      <label style="display: none;"><input type="radio" name="core1" value="영웅">영웅</label>
       <label><input type="radio" name="core1" value="전설">전설</label>
-      <label><input type="radio" name="core1" value="유물">유물</label>
-      <label><input type="radio" name="core1" value="고대" checked>고대</label>
+      <label><input type="radio" name="core1" value="유물" checked>유물</label>
+      <label><input type="radio" name="core1" value="고대">고대</label>
     </div>
-        <div class="row">
-      달:
-      <label><input type="radio" name="core2" value="영웅">영웅</label>
+    <div class="row">
+      <label>질서의 별</label>
+      <label style="display: none;"><input type="radio" name="core2" value="영웅">영웅</label>
       <label><input type="radio" name="core2" value="전설">전설</label>
-      <label><input type="radio" name="core2" value="유물">유물</label>
-      <label><input type="radio" name="core2" value="고대" checked>고대</label>
+      <label><input type="radio" name="core2" value="유물" checked>유물</label>
+      <label><input type="radio" name="core2" value="고대">고대</label>
     </div>
   </div>
   <div class="panel" id="addPanel">
-    <h3>Add / Edit Gem</h3>
+    <h3>젬 추가</h3>
     <form id="addForm" class="addGem">
       <div>
-        <div class="row"><label>req (의지력)</label><input id="f_req" type="number" min="3" max="9" required></div>
-        <div class="row"><label>point (P)</label><input id="f_point" type="number" min="1" max="5" required></div>
-        <div class="row"><label>att</label><input id="f_att" type="number" min="0" max="5"></div>
-        <div class="row"><label>skill</label><input id="f_skill" type="number" min="0" max="5"></div>
-        <div class="row"><label>boss</label><input id="f_boss" type="number" min="0" max="5"></div>
+        <div class="row">
+          <label>필요 의지력</label>
+          <label><input type="radio" name="f_req" value="3" checked>3</label> -
+          <label><input type="radio" name="f_req" value="4">4</label> -
+          <label><input type="radio" name="f_req" value="5">5</label> -
+          <label><input type="radio" name="f_req" value="6">6</label>
+        </div>
+        <div class="row"><label>질서 포인트</label>
+          <label><input type="radio" name="f_point" value="1">1</label> -
+          <label><input type="radio" name="f_point" value="2">2</label> -
+          <label><input type="radio" name="f_point" value="3">3</label> -
+          <label><input type="radio" name="f_point" value="4">4</label> -
+          <label><input type="radio" name="f_point" value="5" checked>5</label>
+        </div>
+        <div class="row"><label>공격력</label>
+          <label><input type="radio" name="f_attack" value="0" checked>0</label> -
+          <label><input type="radio" name="f_attack" value="1">1</label> -
+          <label><input type="radio" name="f_attack" value="2">2</label> -
+          <label><input type="radio" name="f_attack" value="3">3</label> -
+          <label><input type="radio" name="f_attack" value="4">4</label> -
+          <label><input type="radio" name="f_attack" value="5">5</label>
+        </div>
+        <div class="row"><label>추가 피해</label>
+          <label><input type="radio" name="f_skill" value="0" checked>0</label> -
+          <label><input type="radio" name="f_skill" value="1">1</label> -
+          <label><input type="radio" name="f_skill" value="2">2</label> -
+          <label><input type="radio" name="f_skill" value="3">3</label> -
+          <label><input type="radio" name="f_skill" value="4">4</label> -
+          <label><input type="radio" name="f_skill" value="5">5</label>
+        </div>
+        <div class="row"><label>보스 피해</label>
+          <label><input type="radio" name="f_boss" value="0" checked>0</label> -
+          <label><input type="radio" name="f_boss" value="1">1</label> -
+          <label><input type="radio" name="f_boss" value="2">2</label> -
+          <label><input type="radio" name="f_boss" value="3">3</label> -
+          <label><input type="radio" name="f_boss" value="4">4</label> -
+          <label><input type="radio" name="f_boss" value="5">5</label>
+        </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        <button id="btnAddGem" class="primary">Add / Update Gem</button>
-        <button id="btnGenerate" type="button">Generate random (demo)</button>
-        <button id="btnRunSolver" type="button">Run solver</button>
+        <button id="btnAddGem">추가</button>
+        <button id="btnGenerate" type="button">랜덤 젬 샘플 사용</button>
+        <button id="btnRunSolver" class="primary" type="button">실행</button>
       </div>
     </form>
   </div>
-  <div class="panel" style="margin-top:12px;">
-    <h3>Solver Output</h3>
-    <div id="solverOutput"><em class="muted">No result yet.</em></div>
+  <div class="panel">
+    <h3>배치 결과</h3>
+    <div id="solverOutput"><em class="muted">젬 추가 후 실행</em></div>
   </div>
   <div id="gemsList" class="panel"></div>
   <script type="module" src="js/main.js"></script>

@@ -11,6 +11,9 @@ export class Core {
         const map = { '영웅': 0, '전설': 14, '유물': 17, '고대': 17 };
         return map[this.grade] || 0;
     }
+    toString() {
+        return `${this.grade} 등급 ${this.attr}의 ${this.type_} 코어`
+    }
 }
 function compute_coeff(grade, attr, type_) {
     const zero10 = Array(10).fill(0);
@@ -62,6 +65,39 @@ export class Gem {
         s += `]`;
         return s;
     }
+    optionStrArray() {
+        let s = [];
+        if (this.att) {
+            s.push(`공격력 Lv.${this.att}`);
+        }
+        if (this.skill) {
+
+            s.push(`추가 피해 Lv.${this.skill}`);
+        }
+        if (this.boss) {
+            s.push(`보스 피해 Lv.${this.boss}`);
+        }
+        while (s.length < 2) {
+            s.push("-");
+        }
+        return s;
+    }
+    toCard() {
+        const optionArray = this.optionStrArray();
+        const card = document.createElement('div'); card.className = 'gem';
+        card.style = 'width: 180px'; // 고정폭
+        const h = document.createElement('h3'); h.textContent = `${this.req}W ${this.point}P`;
+        const p = document.createElement('div');
+        optionArray.forEach(text => {
+            const div = document.createElement('div');
+            div.className = 'gem-option'
+            div.textContent = text;
+            p.appendChild(div);
+        });
+        const row = document.createElement('div'); row.className = 'row';
+        card.appendChild(h); card.appendChild(p); card.appendChild(row);
+        return card
+    }
 }
 
 export class GemSet {
@@ -73,5 +109,28 @@ export class GemSet {
         }
         this.core_combat_score = core.coeff[this.point] || 0;
         this.max_combat_power = ((this.core_combat_score + 10000) / 10000) * ((Math.floor(this.att * 400 / 120) + 10000) / 10000) * ((Math.floor(this.skill * 700 / 120) + 10000) / 10000) * ((Math.floor(this.boss * 1000 / 120) + 10000) / 10000);
+        this.core = core;
+    }
+    toCard(gems) {
+        // 코어에 할당된 젬 목록을 가져온다.
+        const included = gems.filter(g => (this.used_bitmask & (1n << g.index)) !== 0n);
+
+        // root div 생성
+        const card = document.createElement('div');
+        card.className = 'gemSet';
+
+        // core 정보를 h4에 생성
+        const coreP = document.createElement('h4');
+        coreP.textContent = this.core.toString(); // 문자열로 넣기
+        card.appendChild(coreP);
+
+        // 할당된 gem에게서 toCard 이후 assigned-gems div에 추가
+        const gemContainer = document.createElement('div');
+        gemContainer.className = 'assigned-gems'
+        included.forEach(gem => {
+            gemContainer.appendChild(gem.toCard())
+        });
+        card.appendChild(gemContainer);
+        return card
     }
 }

@@ -15,21 +15,28 @@ function reindexGems() { gems.forEach((g, i) => g.index = BigInt(i)); }
 export function renderGems(filter) {
     reindexGems();
     gemsListEl.innerHTML = '';
-    const q = (filter || '').toString().toLowerCase();
+    // const q = (filter || '').toString().toLowerCase();
     for (const g of gems) {
-        const s = g.toString();
-        if (q && !s.toLowerCase().includes(q)) continue;
+        const optionArray = g.optionStrArray();
+        // if (q && !s.toLowerCase().includes(q)) continue;
         const card = document.createElement('div'); card.className = 'gem';
         const h = document.createElement('h3'); h.textContent = `${g.req}W ${g.point}P`;
-        const p = document.createElement('div'); p.textContent = s;
+        const p = document.createElement('div');
+        optionArray.forEach(text => {
+            const div = document.createElement('div');
+            div.className = 'gem-option'
+            div.textContent = text; // 배열 요소를 div 안에 넣음
+            p.appendChild(div);
+        });
         const row = document.createElement('div'); row.className = 'row';
-        const btnEdit = document.createElement('button'); btnEdit.textContent = 'Edit'; btnEdit.onclick = () => fillForm(g);
-        const btnDel = document.createElement('button'); btnDel.textContent = 'Delete'; btnDel.onclick = () => { if (confirm('Delete?')) { gems = gems.filter(x => x.index !== g.index); renderGems(searchBox.value); } };
-        row.appendChild(btnEdit); row.appendChild(btnDel);
+        // const btnEdit = document.createElement('button'); btnEdit.textContent = 'Edit'; btnEdit.onclick = () => fillForm(g);
+        const btnDel = document.createElement('button'); btnDel.textContent = '삭제'; btnDel.onclick = () => { gems = gems.filter(x => x.index !== g.index); renderGems(searchBox.value); };
+        // row.appendChild(btnEdit);
+        row.appendChild(btnDel);
         card.appendChild(h); card.appendChild(p); card.appendChild(row);
         gemsListEl.appendChild(card);
     }
-    if (!gems.length) gemsListEl.innerHTML = '<div class="muted">No gems. Upload a JSON or generate sample gems.</div>';
+    if (!gems.length) gemsListEl.innerHTML = '<div class="muted">젬이 없습니다.</div>';
 }
 
 function fillForm(g) {
@@ -78,21 +85,24 @@ addForm.addEventListener('submit', (ev) => {
     try {
         const obj = {
             index: BigInt(gems.length),
-            req: Number(document.getElementById('f_req').value),
-            point: Number(document.getElementById('f_point').value),
-            att: Number(document.getElementById('f_att').value) || 0,
-            skill: Number(document.getElementById('f_skill').value) || 0,
-            boss: Number(document.getElementById('f_boss').value) || 0,
+            req: Number(document.querySelector('input[name="f_req"]:checked').value),
+            point: Number(document.querySelector('input[name="f_point"]:checked').value),
+            att: Number(document.querySelector('input[name="f_attack"]:checked').value) || 0,
+            skill: Number(document.querySelector('input[name="f_skill"]:checked').value) || 0,
+            boss: Number(document.querySelector('input[name="f_boss"]:checked').value) || 0,
         };
         const g = new Gem(obj);
         gems.push(g);
         renderGems(searchBox.value);
-        addForm.reset();
+        for (const name of ['f_attack', 'f_skill', 'f_boss']) {
+            const radios = document.querySelectorAll(`input[name="${name}"]`);
+            radios.forEach(r => r.checked = r.value == 0);
+        }
     } catch (err) { alert('invalid gem: ' + err.message); }
 });
 
 document.getElementById('btnGenerate').onclick = () => {
-    const k = 50; const out = []; let seed = 42; function rand() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed; }
+    const k = 63; const out = []; let seed = 42; function rand() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed; }
     for (let i = 0; i < k; i++) {
         const gem_type = rand() % 3;
         const req = gem_type + 8 - (3 + (rand() % 3));
@@ -107,32 +117,32 @@ document.getElementById('btnGenerate').onclick = () => {
 
 document.getElementById('btnRunSolver').onclick = () => {
     // try {
-    const coreGrades = [
-        document.querySelector('input[name="core0"]:checked').value,
-        document.querySelector('input[name="core1"]:checked').value,
-        document.querySelector('input[name="core2"]:checked').value
-    ];
-    const cores = [new Core(coreGrades[0], '질서', '해'), new Core(coreGrades[1], '질서', '달'), new Core(coreGrades[2], '질서', '별')];
-    const t0 = performance.now();
-    const res = solve(gems, cores);
-    const dt = (performance.now() - t0).toFixed(2);
-    if (!res.assign) solverOutput.innerHTML = `<div class="muted">No valid assignments. (${dt}ms)</div>`;
-    else {
-        const [gs1, gs2, gs3] = res.assign;
-        solverOutput.innerHTML = `<div>Answer: <strong>${res.answer.toFixed(6)}</strong> (${dt}ms)</div>` +
-            `<div style="margin-top:8px;"><strong>Core 1</strong>: ${formatGemSet(gs1)}</div>` +
-            `<div><strong>Core 2</strong>: ${formatGemSet(gs2)}</div>` +
-            `<div><strong>Core 3</strong>: ${formatGemSet(gs3)}</div>`;
-    }
+        const coreGrades = [
+            document.querySelector('input[name="core0"]:checked').value,
+            document.querySelector('input[name="core1"]:checked').value,
+            document.querySelector('input[name="core2"]:checked').value
+        ];
+        const cores = [new Core(coreGrades[0], '질서', '해'), new Core(coreGrades[1], '질서', '달'), new Core(coreGrades[2], '질서', '별')];
+        const t0 = performance.now();
+        const res = solve(gems, cores);
+        const dt = (performance.now() - t0).toFixed(2);
+        if (!res.assign) solverOutput.innerHTML = `<div class="muted">배치 실패! (${dt}ms)</div>`;
+        else {
+            solverOutput.innerHTML = "";
+            res.assign.forEach(gs => {
+                solverOutput.appendChild(
+                    gs.toCard(gems)
+                )
+            });
+        }
     // } catch (err) { alert('solver error: ' + err.message); }
 };
 
 function formatGemSet(gs) {
-    console.log(gs)
-    console.log(gs.used_bitmask.toString(2))
-    const included = gems.filter(g => (gs.used_bitmask & (1 << g.index)) !== 0).map(g => g.toString()).join(' ');
+    const included = gems.filter(g => (gs.used_bitmask & (1n << g.index)) !== 0n).map(g => g.toString()).join(' ');
     return `${included} -> ${gs.point}P, att${gs.att}, skill${gs.skill}, boss${gs.boss}`;
 }
+
 
 searchBox.addEventListener('input', () => renderGems(searchBox.value));
 

@@ -105,12 +105,13 @@
     <div id="solverOutput"><em class="muted">젬 추가 후 실행</em></div>
   </div>
   <div class="panel controls">
-    <input id="fileInput" type="file" accept="application/json" style="display: none;">
     <button id="btnLoadStorage" class="small" style="display: none;">Load from localStorage</button>
     <button id="btnSaveStorage" class="small" style="display: none;">Save to localStorage</button>
     <button id="btnGenerate" type="button">랜덤 젬 샘플 사용</button>
     <button id="btnClearAll" class="small">젬 초기화</button>
-    <button id="btnSaveAsJSONFile" class="small">JSON 저장</button>
+    <button id="btnSaveAsJSONFile" class="small" style="display: none;">JSON 저장</button>
+    <button id="btnLoadFromJSONFile" class="'small" style="display: none;">JSON 불러오기</button>
+    <input id="fileInput" type="file" accept="application/json" style="display: none;">
     <div class="spacer"></div>
     <label for="searchBox" style="display: none;">Search:</label>
     <input id="searchBox" placeholder="filter gems" style="display: none;" />

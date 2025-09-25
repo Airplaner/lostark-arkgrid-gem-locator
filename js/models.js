@@ -172,26 +172,29 @@ export class GemSet {
             * (11000) / (Math.floor((120 - this.boss) * 1000 / 120) + 10000);
         this.core = core;
     }
-    toCard(gems) {
-        // 코어에 할당된 젬 목록을 가져온다.
-        const included = gems.filter(g => (this.used_bitmask & (1n << g.index)) !== 0n);
+}
 
-        // root div 생성
-        const card = document.createElement('div');
-        card.className = 'gemSet';
+// Worker로 주고 받은 후에는 prototype이 아니어서 분리
+export function gemSetToard(used_bitmask, core, gems) {
+    // 코어에 할당된 젬 목록을 가져온다.
+    const included = gems.filter(g => (used_bitmask & (1n << g.index)) !== 0n);
 
-        // core 정보를 h4에 생성
-        const coreP = document.createElement('h4');
-        coreP.textContent = this.core.toString(); // 문자열로 넣기
-        card.appendChild(coreP);
+    // root div 생성
+    const card = document.createElement('div');
+    card.className = 'gemSet';
 
-        // 할당된 gem에게서 toCard 이후 assigned-gems div에 추가
-        const gemContainer = document.createElement('div');
-        gemContainer.className = 'assigned-gems'
-        included.forEach(gem => {
-            gemContainer.appendChild(gem.toCard())
-        });
-        card.appendChild(gemContainer);
-        return card
-    }
+    // core 정보를 h4에 생성
+    const coreP = document.createElement('h4');
+    core = new Core(core); // class로 변경
+    coreP.textContent = core.toString(); // 문자열로 넣기
+    card.appendChild(coreP);
+
+    // 할당된 gem에게서 toCard 이후 assigned-gems div에 추가
+    const gemContainer = document.createElement('div');
+    gemContainer.className = 'assigned-gems'
+    included.forEach(gem => {
+        gemContainer.appendChild(gem.toCard())
+    });
+    card.appendChild(gemContainer);
+    return card
 }

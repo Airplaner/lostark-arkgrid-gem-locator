@@ -50,7 +50,7 @@ function get_exact_combat_score(gs1, gs2, gs3) {
     return result;
 }
 
-export function solve(gems, cores, max_candidates) {
+export function solve(gems, cores, max_candidates, onProgress) {
     // ensure unique indices
     const idxs = new Set(gems.map(g => g.index));
     if (idxs.size !== gems.length) throw new Error('index 중복');
@@ -101,7 +101,11 @@ export function solve(gems, cores, max_candidates) {
             for (const gs3 of candidates_gs3) {
                 if (gs1.max_combat_power * gs2.max_combat_power * gs3.max_combat_power < answer) break;
                 const value = get_exact_combat_score(gs1, gs2, gs3);
-                if (value >= answer) { answer = value; assign = [gs1, gs2, gs3]; }
+                if (value >= answer) {
+                    answer = value;
+                    assign = [gs1, gs2, gs3];
+                    onProgress(answer);
+                }
             }
         }
     }

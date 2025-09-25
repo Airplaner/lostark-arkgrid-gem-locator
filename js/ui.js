@@ -1,6 +1,5 @@
 // ----------------------------- UI Logic -----------------------------
-import { solve } from "./solver.js";
-import { Gem, Core } from "./models.js"
+import { Gem, Core, GemSet, gemSetToard } from "./models.js"
 
 const fileInput = document.getElementById('fileInput');
 const gemsListEl = document.getElementById('gemsList');
@@ -163,85 +162,92 @@ addForm.addEventListener('submit', (ev) => {
     } catch (err) { alert('invalid gem: ' + err.message); }
 });
 
+// worker에게 메시지를 받고 어떻게 행동할지 정의
+function makeSolverWorkerHandler(kind, resultContainer) {
+    return function (e) {
+        const { type, current, result } = e.data;
+        resultContainer.innerText = '분석 시작!'
+        if (type === 'progress') {
+            resultContainer.innerText = `진행 중 ... 현재 전투력: ${(current * 100 - 100).toFixed(4)}%`;
+        } else if (type === 'done') {
+            resultContainer.innerText = "";
+
+            const res = result;
+            const resultDiv = document.createElement('div');
+            const resultDesc = document.createElement('h3');
+            resultDiv.appendChild(resultDesc);
+
+            if (!res.assign) {
+                resultDesc.innerText = `${kind} 코어 배치 실패!`;
+                resultDesc.classList.add('muted');
+            } else {
+                resultDesc.innerText = `${kind} 코어 전투력 증가량 ${(res.answer * 100 - 100).toFixed(4)}%`;
+                res.assign.forEach(gs => {
+                    resultDiv.appendChild(
+                        gemSetToard(gs.used_bitmask, gs.core, gems.filter(g => g.type === kind))
+                    );
+                });
+            }
+
+            resultContainer.appendChild(resultDiv);
+        }
+    };
+}
+
 document.getElementById('btnRunSolver').onclick = () => {
-    try {
-        const coreGrades = [
-            document.querySelector('input[name="core0"]:checked').value,
-            document.querySelector('input[name="core1"]:checked').value,
-            document.querySelector('input[name="core2"]:checked').value,
-            document.querySelector('input[name="core4"]:checked').value,
-            document.querySelector('input[name="core5"]:checked').value,
-            document.querySelector('input[name="core6"]:checked').value,
-        ];
-        const coreIsFirstRank = [
-            true,
-            true,
-            true,
-            document.querySelector('input[name="core4_rank"]').checked,
-            document.querySelector('input[name="core5_rank"]').checked,
-            true,
-        ]
-        const cores = [
-            new Core(coreGrades[0], '질서', '해'),
-            new Core(coreGrades[1], '질서', '달'),
-            new Core(coreGrades[2], '질서', '별')
-        ]
-        const coresChaos = [
-            new Core(coreGrades[3], '혼돈', coreIsFirstRank[3] ? '해' : '해2'),
-            new Core(coreGrades[4], '혼돈', coreIsFirstRank[4] ? '달' : '달2'),
-            new Core(coreGrades[5], '혼돈', '별'),
-        ];
-        const solvePrecision = Number(document.querySelector('input[name="solvePrecision"]:checked').value) || 100
+    // Core 클래스 및 분석 요청 파라미터 가져오기
+    const coreGrades = [
+        document.querySelector('input[name="core0"]:checked').value,
+        document.querySelector('input[name="core1"]:checked').value,
+        document.querySelector('input[name="core2"]:checked').value,
+        document.querySelector('input[name="core4"]:checked').value,
+        document.querySelector('input[name="core5"]:checked').value,
+        document.querySelector('input[name="core6"]:checked').value,
+    ];
+    const coreIsFirstRank = [
+        true,
+        true,
+        true,
+        document.querySelector('input[name="core4_rank"]').checked,
+        document.querySelector('input[name="core5_rank"]').checked,
+        true,
+    ]
+    const coresOrder = [
+        new Core({ grade: coreGrades[0], attr: '질서', type: '해' }),
+        new Core({ grade: coreGrades[1], attr: '질서', type: '달' }),
+        new Core({ grade: coreGrades[2], attr: '질서', type: '별' })
+    ]
+    const coresChaos = [
+        new Core({ grade: coreGrades[3], attr: '혼돈', type: coreIsFirstRank[3] ? '해' : '해2' }),
+        new Core({ grade: coreGrades[4], attr: '혼돈', type: coreIsFirstRank[4] ? '달' : '달2' }),
+        new Core({ grade: coreGrades[5], attr: '혼돈', type: '별' })
+    ];
+    const solvePrecision = Number(document.querySelector('input[name="solvePrecision"]:checked').value) || 2
 
-        // 분석
-        const t0 = performance.now();
-        const res = solve(
-            gems.filter(g => g.type === '질서'),
-            cores,
-            Math.pow(10, solvePrecision)
-        );
-        const resChaos = solve(
-            gems.filter(g => g.type === '혼돈'),
-            coresChaos,
-            Math.pow(10, solvePrecision)
-        );
-        const dt = (performance.now() - t0).toFixed(2);
+    // UI 초기화
+    const orderOutput = document.createElement('div');
+    const chaosOutput = document.createElement('div');
+    solverOutput.innerHTML = '';
+    solverOutput.appendChild(orderOutput);
+    solverOutput.appendChild(chaosOutput);
 
-        // 분석 완료 및 UI 갱신
-        solverOutput.innerText = `분석에 ${dt}ms 소요되었습니다.`;
-        const orderResult = document.createElement('div')
-        const orderResultDesc = document.createElement('h3');
-        orderResult.appendChild(orderResultDesc);
-        if (!res.assign) {
-            orderResultDesc.innerText = '질서 코어 배치 실패!';
-            orderResultDesc.classList.add('muted');
-        } else {
-            orderResultDesc.innerText = `질서 코어 전투력 증가량 ${(res.answer * 100 - 100).toFixed(2)}%`;
-            res.assign.forEach(gs => {
-                orderResult.appendChild(
-                    gs.toCard(gems.filter(g => g.type === '질서'))
-                )
-            });
-        }
-        solverOutput.appendChild(orderResult);
+    // 분석용 워커 생성
+    const worker1 = new Worker('./js/worker.js', { type: 'module' });
+    const worker2 = new Worker('./js/worker.js', { type: 'module' });
+    worker1.onmessage = makeSolverWorkerHandler('질서', orderOutput);
+    worker2.onmessage = makeSolverWorkerHandler('혼돈', chaosOutput);
 
-        // 혼돈
-        const chaosResult = document.createElement('div')
-        const chaosResultDesc = document.createElement('h3');
-        chaosResult.appendChild(chaosResultDesc);
-        if (!resChaos.assign) {
-            chaosResultDesc.innerText = '혼돈 코어 배치 실패!';
-            chaosResultDesc.classList.add('muted');
-        } else {
-            chaosResultDesc.innerText = `혼돈 코어 전투력 증가량 ${(resChaos.answer * 100 - 100).toFixed(2)}%`;
-            resChaos.assign.forEach(gs => {
-                chaosResult.appendChild(
-                    gs.toCard(gems.filter(g => g.type === '혼돈'))
-                )
-            });
-        }
-        solverOutput.appendChild(chaosResult);
-    } catch (err) { alert('solver error: ' + err.message); }
+    // 분석 요청
+    worker1.postMessage({
+        gems: gems.filter(g => g.type === '질서'),
+        cores: coresOrder,
+        max_candidates: Math.pow(10, solvePrecision)
+    });
+    worker2.postMessage({
+        gems: gems.filter(g => g.type === '혼돈'),
+        cores: coresChaos,
+        max_candidates: Math.pow(10, solvePrecision)
+    });
 };
 
 // 내부 디버깅용

@@ -232,8 +232,9 @@ document.getElementById('btnRunSolver').onclick = () => {
     solverOutput.appendChild(chaosOutput);
 
     // 분석용 워커 생성
-    const worker1 = new Worker('./js/worker.js', { type: 'module' });
-    const worker2 = new Worker('./js/worker.js', { type: 'module' });
+    const workerUrl = `./js/worker.js?${window.cacheBuster || ''}`;
+    const worker1 = new Worker(workerUrl, { type: 'module' });
+    const worker2 = new Worker(workerUrl, { type: 'module' });
     worker1.onmessage = makeSolverWorkerHandler('질서', orderOutput);
     worker2.onmessage = makeSolverWorkerHandler('혼돈', chaosOutput);
 

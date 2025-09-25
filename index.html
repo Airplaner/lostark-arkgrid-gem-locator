@@ -6,10 +6,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>아크 그리드 젬 배치기</title>
   <link rel="stylesheet" href="css/style.css">
-  <script type="module" src="js/utils.js"></script>
-  <script type="module" src="js/models.js"></script>
-  <script type="module" src="js/solver.js"></script>
-  <script type="module" src="js/ui.js"></script>
+  <script>
+    const interValTime = 60 * 1000 * 10; // 10분
+    window.cacheBuster = Math.floor(new Date().getTime() / interValTime);
+    document.write('<script type="module" src="js/utils.js?' + window.cacheBuster + '"><\/script>');
+    document.write('<script type="module" src="js/models.js?' + window.cacheBuster + '"><\/script>');
+    document.write('<script type="module" src="js/ui.js?' + window.cacheBuster + '"><\/script>');
+  </script>
 </head>
 
 <body>
@@ -151,7 +154,6 @@
     <button data-type="혼돈" class="gem-filter">혼돈</button>
   </div>
   <div id="gemsList" class="panel"></div>
-  <script type="module" src="js/main.js"></script>
 </body>
 
 </html>

@@ -59,7 +59,7 @@ export function solve(gems, cores, max_candidates) {
     const gem_set_per_core = [];
     for (const core of cores) {
         const possible_combination = [];
-        const combos = get_possible_gem_index_combinations(gems, core.energy(), core.target_point());
+        const combos = get_possible_gem_index_combinations(gems, core.energy, core.point);
         for (const gem_index_list of combos) {
             const used = gems.filter(g => gem_index_list.includes(g.index)).map(o => o);
             possible_combination.push(new GemSet(used, core));

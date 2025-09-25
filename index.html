@@ -72,6 +72,11 @@
     <form id="addForm" class="addGem">
       <div>
         <div class="row">
+          <label>젬 타입</label>
+          <label><input type="radio" name="f_type" value="질서" checked>질서</label>
+          <label><input type="radio" name="f_type" value="혼돈">혼돈</label>
+        </div>
+        <div class="row">
           <label>필요 의지력</label>
           <label><input type="radio" name="f_req" value="3" checked>3</label> -
           <label><input type="radio" name="f_req" value="4">4</label> -
@@ -139,6 +144,11 @@
     <div class="spacer"></div>
     <label for="searchBox" style="display: none;">Search:</label>
     <input id="searchBox" placeholder="filter gems" style="display: none;" />
+  </div>
+  <div id="gemFilterContainer">
+    <button data-type="" class="gem-filter primary">전체</button>
+    <button data-type="질서" class="gem-filter">질서</button>
+    <button data-type="혼돈" class="gem-filter">혼돈</button>
   </div>
   <div id="gemsList" class="panel"></div>
   <script type="module" src="js/main.js"></script>

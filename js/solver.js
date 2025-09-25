@@ -84,7 +84,7 @@ export function solve(gems, cores, max_candidates) {
         return res;
     }
 
-    let answer = 0; let assign = null;
+    let answer = 1; let assign = null;
     if (gem_set_per_core[0].length === 0 || gem_set_per_core[1].length === 0 || gem_set_per_core[2].length === 0) return { answer: 0, assign: null };
     const global_c1_max = gem_set_per_core[0][0].max_combat_power;
     const global_c2_max = gem_set_per_core[1][0].max_combat_power;

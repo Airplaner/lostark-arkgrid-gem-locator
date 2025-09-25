@@ -193,7 +193,7 @@ document.getElementById('btnRunSolver').onclick = () => {
         ];
         const solvePrecision = Number(document.querySelector('input[name="solvePrecision"]:checked').value) || 100
 
-        // 질서
+        // 분석
         const t0 = performance.now();
         const res = solve(
             gems.filter(g => g.type === '질서'),
@@ -207,21 +207,40 @@ document.getElementById('btnRunSolver').onclick = () => {
         );
         const dt = (performance.now() - t0).toFixed(2);
 
-        if (!res.assign) solverOutput.innerHTML = `<div class="muted">배치 실패! (${dt}ms)</div>`;
-        else {
-
-            solverOutput.innerHTML = `<div>전투력 증가량: 질서 ${(res.answer * 100 - 100).toFixed(2)}% 혼돈 ${(resChaos.answer * 100 - 100).toFixed(2)}% (${dt}ms 소요)</div>`;
+        // 분석 완료 및 UI 갱신
+        solverOutput.innerText = `분석에 ${dt}ms 소요되었습니다.`;
+        const orderResult = document.createElement('div')
+        const orderResultDesc = document.createElement('h3');
+        orderResult.appendChild(orderResultDesc);
+        if (!res.assign) {
+            orderResultDesc.innerText = '질서 코어 배치 실패!';
+            orderResultDesc.classList.add('muted');
+        } else {
+            orderResultDesc.innerText = `질서 코어 전투력 증가량 ${(res.answer * 100 - 100).toFixed(2)}%`;
             res.assign.forEach(gs => {
-                solverOutput.appendChild(
+                orderResult.appendChild(
                     gs.toCard(gems.filter(g => g.type === '질서'))
                 )
             });
+        }
+        solverOutput.appendChild(orderResult);
+
+        // 혼돈
+        const chaosResult = document.createElement('div')
+        const chaosResultDesc = document.createElement('h3');
+        chaosResult.appendChild(chaosResultDesc);
+        if (!resChaos.assign) {
+            chaosResultDesc.innerText = '혼돈 코어 배치 실패!';
+            chaosResultDesc.classList.add('muted');
+        } else {
+            chaosResultDesc.innerText = `혼돈 코어 전투력 증가량 ${(resChaos.answer * 100 - 100).toFixed(2)}%`;
             resChaos.assign.forEach(gs => {
-                solverOutput.appendChild(
+                chaosResult.appendChild(
                     gs.toCard(gems.filter(g => g.type === '혼돈'))
                 )
             });
         }
+        solverOutput.appendChild(chaosResult);
     } catch (err) { alert('solver error: ' + err.message); }
 };
 

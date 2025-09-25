@@ -42,11 +42,40 @@
       <label><input type="radio" name="core2" value="유물" checked>유물</label>
       <label><input type="radio" name="core2" value="고대">고대</label>
     </div>
+    <br>
+    <div class="row">
+      <label>혼돈의 해</label>
+      <label style="display: none;"><input type="radio" name="core4" value="영웅">영웅</label>
+      <label><input type="radio" name="core4" value="전설">전설</label>
+      <label><input type="radio" name="core4" value="유물" checked>유물</label>
+      <label><input type="radio" name="core4" value="고대">고대</label>
+      <label><input type="checkbox" name="core4_rank" checked>현란한 공격</label>
+    </div>
+    <div class="row">
+      <label>혼돈의 달</label>
+      <label style="display: none;"><input type="radio" name="core5" value="영웅">영웅</label>
+      <label><input type="radio" name="core5" value="전설">전설</label>
+      <label><input type="radio" name="core5" value="유물" checked>유물</label>
+      <label><input type="radio" name="core5" value="고대">고대</label>
+      <label><input type="checkbox" name="core5_rank" checked>불타는 일격</label>
+    </div>
+    <div class="row">
+      <label>혼돈의 별</label>
+      <label style="display: none;"><input type="radio" name="core6" value="영웅">영웅</label>
+      <label><input type="radio" name="core6" value="전설">전설</label>
+      <label><input type="radio" name="core6" value="유물" checked>유물</label>
+      <label><input type="radio" name="core6" value="고대">고대</label>
+    </div>
   </div>
   <div class="panel" id="addPanel">
     <h3>젬 추가</h3>
     <form id="addForm" class="addGem">
       <div>
+        <div class="row">
+          <label>젬 타입</label>
+          <label><input type="radio" name="f_type" value="질서" checked>질서</label>
+          <label><input type="radio" name="f_type" value="혼돈">혼돈</label>
+        </div>
         <div class="row">
           <label>필요 의지력</label>
           <label><input type="radio" name="f_req" value="3" checked>3</label> -
@@ -115,6 +144,11 @@
     <div class="spacer"></div>
     <label for="searchBox" style="display: none;">Search:</label>
     <input id="searchBox" placeholder="filter gems" style="display: none;" />
+  </div>
+  <div id="gemFilterContainer">
+    <button data-type="" class="gem-filter primary">전체</button>
+    <button data-type="질서" class="gem-filter">질서</button>
+    <button data-type="혼돈" class="gem-filter">혼돈</button>
   </div>
   <div id="gemsList" class="panel"></div>
   <script type="module" src="js/main.js"></script>

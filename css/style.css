@@ -25,7 +25,7 @@ h1 {
 }
 
 h3 {
-    font-weight: 600;
+  font-weight: 600;
 }
 
 .gem-option {
@@ -58,11 +58,11 @@ h3 {
   font-size: 1.1rem;
 }
 
-.panel h3 + * {
+.panel h3+* {
   margin-top: 16px;
 }
 
-.panel .row + .row {
+.panel .row+.row {
   margin-top: 12px;
 }
 
@@ -120,8 +120,8 @@ button {
 }
 
 button:hover {
-    background-color: #f1f5f9;
-    border-color: #cbd5e1;
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
 button.primary {
@@ -131,8 +131,8 @@ button.primary {
 }
 
 button.primary:hover {
-    background: var(--primary-hover);
-    border-color: var(--primary-hover);
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
 }
 
 .small {
@@ -231,4 +231,9 @@ pre {
 .panel.solve .row button {
   margin-left: auto;
   padding: 10px 16px;
+}
+
+.gem-filter {
+  margin: 0 5px;
+  padding: 5px 5px;
 }

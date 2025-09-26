@@ -1,7 +1,7 @@
 import { LRUCache } from "./utils.js";
-import { GemSet } from "./models.js"
+import { GemSet, GemSetPack } from "./models.js"
 
-function get_possible_gem_index_combinations(gems, energy, point) {
+function getPossibleGemIndexComb(gems, energy, point) {
     // 주어진 gems을 사용해서 요구하는 energy와 point를 모두 충족하는 집합을 반환합니다.
     const n = gems.length;
     // if (!(energy === 12 || energy === 15 || energy === 17)) throw new Error('energy must be 12,15,17');
@@ -37,77 +37,71 @@ function get_possible_gem_index_combinations(gems, energy, point) {
     }
     return result;
 }
+export function getGemSets(gems, core) {
+    // 주어진 gems를 core에 장착할 수 있는 모든 경우의 수를 GemSet으로 반환합니다.
 
-function get_exact_combat_score(gs1, gs2, gs3) {
-    // 주어진 GemSet 3개로 얻을 수 있는 전투력을 반환합니다.
-    let result = 1; let att = 0, skill = 0, boss = 0;
-    att += gs1.att; skill += gs1.skill; boss += gs1.boss; result *= (gs1.core_combat_score + 10000) / 10000;
-    att += gs2.att; skill += gs2.skill; boss += gs2.boss; result *= (gs2.core_combat_score + 10000) / 10000;
-    att += gs3.att; skill += gs3.skill; boss += gs3.boss; result *= (gs3.core_combat_score + 10000) / 10000;
-    result *= (Math.floor(att * 400 / 120) + 10000) / 10000;
-    result *= (Math.floor(skill * 700 / 120) + 10000) / 10000;
-    result *= (Math.floor(boss * 1000 / 120) + 10000) / 10000;
-    return result;
-}
-
-export function solve(gems, cores, max_candidates, onProgress) {
     // ensure unique indices
     const idxs = new Set(gems.map(g => g.index));
     if (idxs.size !== gems.length) throw new Error('index 중복');
-    if (cores.length !== 3) throw new Error('cores must be length 3');
 
-    const gem_set_per_core = [];
-    for (const core of cores) {
-        const possible_combination = [];
-        const combos = get_possible_gem_index_combinations(gems, core.energy, core.point);
-        for (const gem_index_list of combos) {
-            const used = gems.filter(g => gem_index_list.includes(g.index)).map(o => o);
-            possible_combination.push(new GemSet(used, core));
-        }
-        possible_combination.sort((a, b) => b.max_combat_power - a.max_combat_power);
-        gem_set_per_core.push(possible_combination);
+    const possibleCombination = [];
+    for (const gemIndexList of getPossibleGemIndexComb(gems, core.energy, core.point)) {
+        const used = gems.filter(g => gemIndexList.includes(g.index)).map(o => o);
+        possibleCombination.push(new GemSet(used, core));
     }
+    return possibleCombination;
+}
+
+
+
+export function getBestGemSetPacks(gemSets, attMax, skillMax, bossMax, maxCandidates) {
+    if (gemSets.length != 3) throw new Error("GemSets length should be 3");
 
     const cache = new LRUCache(20000);
-    function get_candidates(current_mask, core_idx) {
-        const key = current_mask + '|' + core_idx;
+    function getCandidates(currentBitmask, coreIndex) {
+        // 주어진 Core가 가진 GemSet 중 currentBitmask와 충돌하지 않는 GemSet의 목록을 반환
+        const key = currentBitmask + '|' + coreIndex;
         const hit = cache.get(key);
         if (hit !== undefined) return hit;
         let res = [];
-        for (const gs of gem_set_per_core[core_idx]) {
-            if ((gs.used_bitmask & current_mask) === 0n) {
+        for (const gs of gemSets[coreIndex]) {
+            if ((gs.bitmask & currentBitmask) === 0n) {
                 res.push(gs);
-                if (res.length > max_candidates) break;
+                if (res.length > maxCandidates) break;
             }
         }
         cache.set(key, res);
         return res;
     }
+    if (gemSets.some(gs => gs.length === 0)) return [];
 
-    let answer = 1; let assign = null;
-    if (gem_set_per_core[0].length === 0 || gem_set_per_core[1].length === 0 || gem_set_per_core[2].length === 0) return { answer: 0, assign: null };
-    const global_c1_max = gem_set_per_core[0][0].max_combat_power;
-    const global_c2_max = gem_set_per_core[1][0].max_combat_power;
-    const global_c3_max = gem_set_per_core[2][0].max_combat_power;
+    let targetMin = 0; // 현재까지 찾은 배치 중 전투력 범위의 하한(min)의 가장 큰 값
+    const gm2 = gemSets[1][0].maxScore;
+    const gm3 = gemSets[2][0].maxScore;
 
-    for (const gs1 of gem_set_per_core[0]) {
-        if (gs1.max_combat_power * global_c2_max * global_c3_max < answer) break;
-        const candidates_gs2 = get_candidates(gs1.used_bitmask, 1);
-        if (!candidates_gs2.length) continue;
-        for (const gs2 of candidates_gs2) {
-            if (gs1.max_combat_power * gs2.max_combat_power * global_c3_max < answer) break;
-            const candidates_gs3 = get_candidates(gs1.used_bitmask | gs2.used_bitmask, 2);
-            if (!candidates_gs3.length) continue;
-            for (const gs3 of candidates_gs3) {
-                if (gs1.max_combat_power * gs2.max_combat_power * gs3.max_combat_power < answer) break;
-                const value = get_exact_combat_score(gs1, gs2, gs3);
-                if (value >= answer) {
-                    answer = value;
-                    assign = [gs1, gs2, gs3];
-                    onProgress(answer);
+    let answer = []
+    for (const gs1 of gemSets[0]) {
+        if (gs1.maxScore * gm2 * gm3 < targetMin) break;
+        for (const gs2 of getCandidates(gs1.bitmask, 1)) {
+            if (gs1.maxScore * gs2.maxScore * gm3 < targetMin) break;
+            for (const gs3 of getCandidates(gs1.bitmask | gs2.bitmask, 2)) {
+                if (gs1.maxScore * gs2.maxScore * gs3.maxScore < targetMin) break;
+                // 세 개의 GemSet으로 얻을 수 있는 전투력 범위 구함
+                let gsp = new GemSetPack(gs1, gs2, gs3, attMax, skillMax, bossMax);
+                // 정답일 가능성이 있다면 후보에 추가
+                if (gsp.maxScore > targetMin) {
+                    answer.push(gsp);
+                }
+                // 새로운 젬 배치 (GemSetPack)가 보장하는 최소 전투력이 기존보다 높은 경우 갱신
+                // 더 이상 후보가 아닌 요소를 answer에서 빼는 것은 마지막에 수행
+                if (gsp.minScore > targetMin) {
+                    targetMin = gsp.minScore;
                 }
             }
         }
     }
-    return { answer, assign };
+    // maxScore이 targetMin보다 작은 경우엔 아예 후보조차 아님
+    answer = answer.filter(g => g.maxScore >= targetMin)
+    answer.sort((a, b) => b.maxScore - a.maxScore)
+    return answer
 }

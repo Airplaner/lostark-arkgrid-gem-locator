@@ -1,5 +1,6 @@
 // ----------------------------- UI Logic -----------------------------
-import { Gem, Core, GemSet, gemSetToard } from "./models.js"
+import { Gem, Core, GemSet, GemSetPackTuple } from "./models.js"
+import { getBestGemSetPacks, getGemSets } from "./solver.js";
 
 const fileInput = document.getElementById('fileInput');
 const gemsListEl = document.getElementById('gemsList');
@@ -120,21 +121,42 @@ document.getElementById('btnClearAll').onclick = () => {
 };
 
 // 랜덤 젬 생성
-document.getElementById('btnGenerate').onclick = () => {
-    const k = 63; const out = []; let seed = 42; function rand() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed; }
+function generateRandomGems(k) {
+    let seed = 42
+    function rand() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed; }
+    function randint(min, max) {
+        // python random.randint
+        return (rand() % (max - min + 1)) + min;
+    }
+    const out = [];
     for (const gemType of ['질서', '혼돈']) {
         for (let i = 0; i < k; i++) {
-            const gemSubtype = rand() % 3; // 안정, 견고, 불안
-            const req = gemSubtype + 8 - (3 + (rand() % 3));
-            const point = 3 + (rand() % 3);
-            const att = gemSubtype !== 2 ? (rand() % 6) : 0;
-            const skill = gemSubtype !== 1 ? (rand() % 6) : 0;
-            const boss = gemSubtype !== 0 ? (rand() % 6) : 0;
-            out.push(new Gem({ index: i, req, point, att, skill, boss, type: gemType }));
+            // 젬 타입 (안정 60%, 견고 30%, 불안 10%)
+            const subtype = randint(0, 9);
+            const gemSubtype = subtype <= 5 ? 0 : subtype <= 8 ? 1 : 2;
+
+            const req = gemSubtype + 8 - randint(4, 5);
+            const point = randint(4, 5);
+            const att = gemSubtype !== 2 ? randint(0, 5) : 0;
+            const skill = gemSubtype !== 1 ? randint(0, 5) : 0;
+            const boss = gemSubtype !== 0 ? randint(0, 5) : 0;
+            const gem = new Gem({ index: i, req, point, att, skill, boss, type: gemType });
+
+            // if (gemType === '혼돈') {
+            //     gem.att = gemSubtype !== 2 ? randint(4, 5): 0;
+            //     gem.skill = gemSubtype !== 1 ? randint(4, 5): 0;
+            //     gem.boss = gemSubtype !== 0 ? randint(4, 5): 0;
+            // }
+            out.push(gem);
         }
     }
-    gems = out; renderGems(); saveGems();
+    return out;
 };
+document.getElementById('btnGenerate').onclick = () => {
+    gems = generateRandomGems(50);
+    renderGems();
+    saveGems();
+}
 
 // 젬 추가 버튼
 addForm.addEventListener('submit', (ev) => {
@@ -161,38 +183,6 @@ addForm.addEventListener('submit', (ev) => {
         saveGems();
     } catch (err) { alert('invalid gem: ' + err.message); }
 });
-
-// worker에게 메시지를 받고 어떻게 행동할지 정의
-function makeSolverWorkerHandler(kind, resultContainer) {
-    return function (e) {
-        const { type, current, result } = e.data;
-        resultContainer.innerText = '분석 시작!'
-        if (type === 'progress') {
-            resultContainer.innerText = `진행 중 ... 현재 전투력: ${(current * 100 - 100).toFixed(4)}%`;
-        } else if (type === 'done') {
-            resultContainer.innerText = "";
-
-            const res = result;
-            const resultDiv = document.createElement('div');
-            const resultDesc = document.createElement('h3');
-            resultDiv.appendChild(resultDesc);
-
-            if (!res.assign) {
-                resultDesc.innerText = `${kind} 코어 배치 실패!`;
-                resultDesc.classList.add('muted');
-            } else {
-                resultDesc.innerText = `${kind} 코어 전투력 증가량 ${(res.answer * 100 - 100).toFixed(4)}%`;
-                res.assign.forEach(gs => {
-                    resultDiv.appendChild(
-                        gemSetToard(gs.used_bitmask, gs.core, gems.filter(g => g.type === kind))
-                    );
-                });
-            }
-
-            resultContainer.appendChild(resultDiv);
-        }
-    };
-}
 
 document.getElementById('btnRunSolver').onclick = () => {
     // Core 클래스 및 분석 요청 파라미터 가져오기
@@ -224,30 +214,131 @@ document.getElementById('btnRunSolver').onclick = () => {
     ];
     const solvePrecision = Number(document.querySelector('input[name="solvePrecision"]:checked').value) || 2
 
-    // UI 초기화
-    const orderOutput = document.createElement('div');
-    const chaosOutput = document.createElement('div');
+
+    // 시작
+    const debugOutput = document.createElement("div");
     solverOutput.innerHTML = '';
-    solverOutput.appendChild(orderOutput);
-    solverOutput.appendChild(chaosOutput);
 
-    // 분석용 워커 생성
-    const worker1 = new Worker('./js/worker.js', { type: 'module' });
-    const worker2 = new Worker('./js/worker.js', { type: 'module' });
-    worker1.onmessage = makeSolverWorkerHandler('질서', orderOutput);
-    worker2.onmessage = makeSolverWorkerHandler('혼돈', chaosOutput);
+    const gemsOrder = gems.filter(g => g.type === '질서');
+    const gemsChaos = gems.filter(g => g.type === '혼돈');
 
-    // 분석 요청
-    worker1.postMessage({
-        gems: gems.filter(g => g.type === '질서'),
-        cores: coresOrder,
-        max_candidates: Math.pow(10, solvePrecision)
+    debugOutput.innerHTML += `<p>질서 젬 ${gemsOrder.length}개</p>`;
+    debugOutput.innerHTML += `<p>혼돈 젬 ${gemsChaos.length}개</p>`;
+
+    // 현재 젬으로 코어의 목표 포인트를 충족할 수 있는 젬 조합(GemSet) 생성
+    const gemSetsOrder = [];
+    const gemSetsChaos = [];
+
+    coresOrder.forEach(core => {
+        gemSetsOrder.push(getGemSets(gemsOrder, core));
+    })
+    coresChaos.forEach(core => {
+        gemSetsChaos.push(getGemSets(gemsChaos, core));
+    })
+    const gemSetsTotal = gemSetsOrder.concat(gemSetsChaos);
+
+    debugOutput.innerHTML += '<p>각 코어별 가능한 조합의 수</p>'
+    debugOutput.innerHTML += `<p>질서의 해: ${gemSetsOrder[0].length}개</p>`;
+    debugOutput.innerHTML += `<p>질서의 별: ${gemSetsOrder[1].length}개</p>`;
+    debugOutput.innerHTML += `<p>질서의 달: ${gemSetsOrder[2].length}개</p>`;
+    debugOutput.innerHTML += `<p>혼돈의 해: ${gemSetsChaos[0].length}개</p>`;
+    debugOutput.innerHTML += `<p>혼돈의 별: ${gemSetsChaos[1].length}개</p>`;
+    debugOutput.innerHTML += `<p>혼돈의 달: ${gemSetsChaos[2].length}개</p>`;
+
+
+    // 공격력, 추가 피해, 보스 피해 Lv의 최대를 구함
+
+    // 각 코어가 가진 젬 조합 중 가장 높은 공격력을 가지는 것을 고르는 것으로
+    // 전체 공격력의 합의 최대치를 빠르게 구할 수 있음 (중복 무시)
+
+    // 이를 공격력, 추가 피해, 보스 피해에 대해서 모두 수행
+    // 각 comb 배열에서 key 값의 최대를 구하는 함수
+    function maxInComb(comb, key) {
+        let max = 0;
+        for (const gem of comb) {
+            if (gem[key] > max) max = gem[key];
+        }
+        return max;
+    }
+
+    // 공격력, 스킬, 보스 피해 합 계산
+    let attMax = 0, skillMax = 0, bossMax = 0;
+
+    for (const comb of gemSetsTotal) {
+        attMax += maxInComb(comb, "att");
+        skillMax += maxInComb(comb, "skill");
+        bossMax += maxInComb(comb, "boss");
+    }
+
+
+    debugOutput.innerHTML += `<p>최대 공격력 Lv. ${attMax}</p>`
+    debugOutput.innerHTML += `<p>최대 추가 피해 Lv. ${skillMax}</p>`
+    debugOutput.innerHTML += `<p>최대 보스 피해 Lv. ${bossMax}</p>`
+
+    // 해당 값을 바탕으로 모든 젬 조합(GemSet)이 증가시켜주는 전투력의 범위를 한정
+    gemSetsTotal.forEach(gemSets => {
+        gemSets.map(gemSet => gemSet.setScoreRange(attMax, skillMax, bossMax))
+        gemSets.sort((a, b) => b.maxScore - a.maxScore);
     });
-    worker2.postMessage({
-        gems: gems.filter(g => g.type === '혼돈'),
-        cores: coresChaos,
-        max_candidates: Math.pow(10, solvePrecision)
-    });
+
+    // 질서 및 혼돈 코어에 대해서
+    // 가장 높은 전투력을 증가시킬 것으로 예상되는 젬 조합 3개 (GemSetPack)들의 목록을 구함
+    const gspOrder = getBestGemSetPacks(
+        gemSetsOrder, attMax, skillMax, bossMax, solvePrecision
+    );
+
+
+    debugOutput.innerHTML += `<p>질서 코어에 가능한 조합의 수: ${gspOrder.length}</p>`
+    const gspChaos = getBestGemSetPacks(
+        gemSetsChaos, attMax, skillMax, bossMax, solvePrecision
+    );
+
+
+    debugOutput.innerHTML += `<p>혼돈 코어에 가능한 조합의 수: ${gspChaos.length}</p>`;
+
+    // 질서 및 혼돈 GemSetPack에 대해서 모든 조합을 비교하여
+    // 가장 높은 전투력을 증가시켜주는 GemSetPackTuple을 구함
+
+
+    if (!gspOrder.length && !gspChaos.length) {
+        solverOutput.innerHTML += "<p>질서 및 혼돈 배치 불가능</p>";
+        return;
+    }
+    else if (!gspOrder.length) {
+        solverOutput.innerHTML += "<p>질서 배치 불가능</p>";
+        solverOutput.appendChild(gspChaos[0].toCard(gemsChaos));
+        return;
+    }
+    else if (!gspChaos.length) {
+        solverOutput.innerHTML += "<p>혼돈 배치 불가능</p>";
+        solverOutput.appendChild(gspOrder[0].toCard(gemsOrder));
+        return;
+    }
+    // 보통 서로를 무시한 (maxScore 기준) 경우가 최적해지만, 한쪽으로 기울어진 경우
+    let answer = new GemSetPackTuple(gspOrder[0], gspChaos[0]);
+    let isNewAnswer = false;
+    const prevCard = answer.toCard(gems);
+
+    // 너무 많아서 1000개까지만 봄
+    for (const gsp1 of gspOrder.slice(0, 1000)) {
+        for (const gsp2 of gspChaos.slice(0, 1000)) {
+            if (gsp1.maxScore * gsp2.maxScore < answer.score) break;
+            let gspt = new GemSetPackTuple(gsp1, gsp2);
+            if (gspt.score > answer.score) {
+                answer = gspt;
+                isNewAnswer = true;
+                console.log("new Answer come!");
+            }
+        }
+    }
+
+    if (isNewAnswer) {
+        debugOutput.innerHTML += `<hr><p>아래는 새로운 알고리즘이 적용되기 이전의 답으로 현재보다 약간 낮음.</p>`
+        debugOutput.appendChild(prevCard);
+    }
+
+    solverOutput.appendChild(answer.toCard(gems));
+    solverOutput.appendChild(debugOutput);
 };
 
 // 내부 디버깅용

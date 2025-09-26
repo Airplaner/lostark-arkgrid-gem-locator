@@ -283,8 +283,8 @@ export class GemSetPackTuple {
         // 공격력, 스킬, 보스 공격력 div 생성
         const stats = [
             { label: '공격력', value: this.att, coeff: 400 },
-            { label: '스킬 공격', value: this.skill, coeff: 700 },
-            { label: '보스 공격', value: this.boss, coeff: 1000 }
+            { label: '추가 피해', value: this.skill, coeff: 700 },
+            { label: '보스 피해', value: this.boss, coeff: 1000 }
         ];
 
         stats.forEach(stat => {

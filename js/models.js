@@ -162,7 +162,7 @@ function coeffToInc(v, base = 10000) {
 }
 function numberToInc(v, fixed = 2) {
     // 1.23같은 실수를 23%로 반환
-    return `${((v-1)*100).toFixed(fixed)}%`;
+    return `${((v - 1) * 100).toFixed(fixed)}%`;
 }
 
 export class GemSet {
@@ -277,7 +277,7 @@ export class GemSetPackTuple {
         resultDiv.appendChild(this.gsp2.toCard(gems.filter(g => g.type === '혼돈')));
         resultDiv.appendChild(
             Object.assign(document.createElement('div'),
-                { innerText: `전투력 증가량 +${numberToInc(this.score, 4)}`}
+                { innerText: `전투력 증가량 +${numberToInc(this.score, 4)}` }
             )
         )
         // 공격력, 스킬, 보스 공격력 div 생성
@@ -291,7 +291,7 @@ export class GemSetPackTuple {
             const div = document.createElement('div');
             const statScore = coeffToInc(Math.floor(stat.value * stat.coeff / 120));
             div.textContent = `${stat.label} Lv. ${stat.value} `
-            + `(+${statScore})`;
+                + `(+${statScore})`;
             div.classList.add('gem-set-stat'); // 필요시 스타일링용 클래스
             resultDiv.appendChild(div);
         });

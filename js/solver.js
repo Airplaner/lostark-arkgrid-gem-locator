@@ -24,7 +24,8 @@ function getPossibleGemIndexComb(gems, energy, point) {
                 const ek = ej - g[k][1];
                 const pk = pj + g[k][2];
                 if (pk >= point && ek >= 0) result.push([g[i][0], g[j][0], g[k][0]]);
-                if (ek < 3) break;
+                if (ek < 3) continue;
+                if (ek < 0) break;
                 if (pk + 5 < point) continue;
                 for (let m = k + 1; m < n; m++) {
                     const el = ek - g[m][1];
